@@ -1,0 +1,6 @@
+{
+  "name": "money-api",
+  "version": "1.0.0",
+  "description": "Daily money management API",
+  "main": "index.js"
+}

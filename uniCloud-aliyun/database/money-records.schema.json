@@ -1,0 +1,67 @@
+{
+	"bsonType": "object",
+	"required": ["type", "amount", "occurred_at", "created_at"],
+	"permission": {
+		"read": "false",
+		"create": "false",
+		"update": "false",
+		"delete": "false"
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"type": {
+			"bsonType": "string",
+			"title": "记录类型",
+			"enum": [
+				{
+					"text": "收入",
+					"value": "income"
+				},
+				{
+					"text": "支出",
+					"value": "expense"
+				},
+				{
+					"text": "存款",
+					"value": "deposit"
+				}
+			]
+		},
+		"amount": {
+			"bsonType": "int",
+			"title": "金额，单位分",
+			"minimum": 1
+		},
+		"category_id": {
+			"bsonType": "string",
+			"title": "分类 ID"
+		},
+		"category_name": {
+			"bsonType": "string",
+			"title": "分类名称快照"
+		},
+		"category_can_consume": {
+			"bsonType": "bool",
+			"title": "分类是否可消费快照"
+		},
+		"note": {
+			"bsonType": "string",
+			"title": "备注",
+			"maxLength": 100
+		},
+		"occurred_at": {
+			"bsonType": "timestamp",
+			"title": "发生时间"
+		},
+		"created_at": {
+			"bsonType": "timestamp",
+			"description": "创建时间"
+		},
+		"updated_at": {
+			"bsonType": "timestamp",
+			"description": "更新时间"
+		}
+	}
+}
