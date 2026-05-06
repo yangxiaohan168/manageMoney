@@ -25,20 +25,16 @@
 							<view class="hero-date">{{ todayText }}</view>
 							<view class="hero-name">towYangLife</view>
 						</view>
-						<view class="hero-amount">{{ formatMoney(totalAssets, true) }}</view>
+						<view class="hero-title">今日收支</view>
 					</view>
 					<view class="hero-stats">
 						<view>
-							<text class="stat-label">可消费</text>
-							<text class="stat-value">{{ formatMoney(summary.totals.consumableBalance) }}</text>
+							<text class="stat-label">今日收入</text>
+							<text class="stat-value">{{ formatMoney(todayTotals.income) }}</text>
 						</view>
 						<view>
-							<text class="stat-label">存款/不可消费</text>
-							<text class="stat-value">{{ formatMoney(summary.totals.protectedBalance) }}</text>
-						</view>
-						<view>
-							<text class="stat-label">总支出</text>
-							<text class="stat-value danger-text">{{ formatMoney(summary.totals.expense) }}</text>
+							<text class="stat-label">今日支出</text>
+							<text class="stat-value danger-text">{{ formatMoney(todayTotals.expense) }}</text>
 						</view>
 					</view>
 				</view>
@@ -49,22 +45,19 @@
 							<view class="section-title">今日记录</view>
 							<view class="section-subtitle">{{ fullDateText }}</view>
 						</view>
-						<text class="refresh" @click="loadAll">刷新</text>
-					</view>
-					<view class="summary-strip">
-						<view>
-							<text>收入</text>
-							<strong>{{ formatMoney(todayTotals.income) }}</strong>
-						</view>
-						<view>
-							<text>支出</text>
-							<strong class="danger-text">{{ formatMoney(todayTotals.expense) }}</strong>
+						<view class="header-actions">
+							<text class="refresh" @click="loadAll">刷新</text>
+							<text class="add-record-btn" @click="openRecordForm()">+ 新建</text>
 						</view>
 					</view>
-					<view v-if="!todayRecords.length" class="empty">今天还没有记录，点底部 + 记一笔。</view>
+					<view v-if="!todayRecords.length" class="empty">今天还没有记录，点“+ 新建”记一笔。</view>
 					<view v-else class="timeline">
-						<view v-for="record in todayRecords" :key="record._id" class="record-item">
-							<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+						<view v-for="(record, index) in todayRecords" :key="record._id" class="record-item">
+							<view class="record-node">
+								<view v-if="index !== 0" class="node-line top-line"></view>
+								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+								<view v-if="index !== todayRecords.length - 1" class="node-line bottom-line"></view>
+							</view>
 							<view class="record-main">
 								<view class="record-name">{{ recordDisplayName(record) }}</view>
 								<view class="record-note">{{ recordTypeText(record.type) }}{{ record.note ? ' · ' + record.note : '' }}</view>
@@ -113,9 +106,33 @@
 					</view>
 					<view class="section-title small-title">周期明细</view>
 					<view v-if="!summary.periodRecords.length" class="empty">当前周期暂无记录。</view>
-					<view v-else class="timeline">
-						<view v-for="record in summary.periodRecords" :key="record._id" class="record-item">
-							<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+					<view v-else>
+						<view class="day-stat-list">
+							<view
+								v-for="day in statsDayGroups"
+								:key="day.key"
+								:class="['day-stat-card', selectedStatDay === day.key ? 'active' : '']"
+								@click="selectedStatDay = day.key"
+							>
+								<view>
+									<view class="day-stat-date">{{ day.label }}</view>
+									<view class="day-stat-count">{{ day.records.length }} 条记录</view>
+								</view>
+								<view class="day-stat-amounts">
+									<text>入 {{ formatMoney(day.income) }}</text>
+									<text class="danger-text">出 {{ formatMoney(day.expense) }}</text>
+									<text>存 {{ formatMoney(day.deposit) }}</text>
+								</view>
+							</view>
+						</view>
+						<view class="section-title small-title">{{ selectedStatDayLabel }}明细</view>
+						<view class="timeline">
+						<view v-for="(record, index) in selectedStatRecords" :key="record._id" class="record-item">
+							<view class="record-node">
+								<view v-if="index !== 0" class="node-line top-line"></view>
+								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+								<view v-if="index !== selectedStatRecords.length - 1" class="node-line bottom-line"></view>
+							</view>
 							<view class="record-main">
 								<view class="record-name">{{ recordDisplayName(record) }}</view>
 								<view class="record-note">{{ recordTypeText(record.type) }}{{ record.note ? ' · ' + record.note : '' }}</view>
@@ -128,6 +145,7 @@
 							</view>
 						</view>
 						<view class="the-end">The end</view>
+						</view>
 					</view>
 				</view>
 
@@ -135,7 +153,7 @@
 					<view class="section-header">
 						<view>
 							<view class="section-title">存款</view>
-							<view class="section-subtitle">单独记录不可消费资金</view>
+							<view class="section-subtitle">存款记录</view>
 						</view>
 						<text class="refresh" @click="openRecordForm('deposit')">新增存款</text>
 					</view>
@@ -147,8 +165,12 @@
 					</view>
 					<view v-if="!depositRecords.length" class="empty">还没有存款记录。</view>
 					<view v-else class="timeline">
-						<view v-for="record in depositRecords" :key="record._id" class="record-item">
-							<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+						<view v-for="(record, index) in depositRecords" :key="record._id" class="record-item">
+							<view class="record-node">
+								<view v-if="index !== 0" class="node-line top-line"></view>
+								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+								<view v-if="index !== depositRecords.length - 1" class="node-line bottom-line"></view>
+							</view>
 							<view class="record-main">
 								<view class="record-name">{{ recordDisplayName(record) }}</view>
 								<view class="record-note">存款{{ record.note ? ' · ' + record.note : '' }}</view>
@@ -167,9 +189,6 @@
 				<view :class="['tab-item', activeTab === 'today' ? 'active' : '']" @click="activeTab = 'today'">
 					<text class="tab-icon">今</text>
 					<text>今日记录</text>
-				</view>
-				<view class="tab-create" @click="openRecordForm()">
-					<text>+</text>
 				</view>
 				<view :class="['tab-item', activeTab === 'stats' ? 'active' : '']" @click="activeTab = 'stats'">
 					<text class="tab-icon">统</text>
@@ -223,6 +242,7 @@ export default {
 			confirmPasswordInput: '',
 			activeTab: 'today',
 			statPeriod: 'month',
+			selectedStatDay: '',
 			records: [],
 			summary: this.getEmptySummary(),
 			showRecordForm: false,
@@ -266,6 +286,33 @@ export default {
 		statRangeLabel() {
 			const range = this.getPeriodRange(this.statPeriod);
 			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
+		},
+		statsDayGroups() {
+			const map = {};
+			(this.summary.periodRecords || []).forEach((record) => {
+				const key = this.dayKey(record.occurred_at);
+				if (!map[key]) {
+					map[key] = {
+						key,
+						label: this.formatDateText(record.occurred_at),
+						income: 0,
+						expense: 0,
+						deposit: 0,
+						records: []
+					};
+				}
+				map[key][record.type] += Number(record.amount || 0);
+				map[key].records.push(record);
+			});
+			return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
+		},
+		selectedStatRecords() {
+			const group = this.statsDayGroups.find((item) => item.key === this.selectedStatDay);
+			return group ? group.records : [];
+		},
+		selectedStatDayLabel() {
+			const group = this.statsDayGroups.find((item) => item.key === this.selectedStatDay);
+			return group ? group.label : '';
 		}
 	},
 	onLoad() {
@@ -360,13 +407,24 @@ export default {
 				]);
 				this.records = recordData.records || [];
 				this.summary = summaryData || this.getEmptySummary();
+				this.ensureSelectedStatDay();
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
 			}
 		},
 		changePeriod(period) {
 			this.statPeriod = period;
+			this.selectedStatDay = '';
 			this.loadAll();
+		},
+		ensureSelectedStatDay() {
+			if (!this.statsDayGroups.length) {
+				this.selectedStatDay = '';
+				return;
+			}
+			if (!this.statsDayGroups.some((item) => item.key === this.selectedStatDay)) {
+				this.selectedStatDay = this.statsDayGroups[0].key;
+			}
 		},
 		openRecordForm(type = 'expense') {
 			this.recordForm = {
@@ -454,6 +512,10 @@ export default {
 		formatDateText(timestamp) {
 			const date = new Date(timestamp);
 			return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
+		},
+		dayKey(timestamp) {
+			const date = new Date(timestamp);
+			return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 		},
 		shortDate(timestamp) {
 			const date = new Date(timestamp);
@@ -608,10 +670,9 @@ export default {
 	font-size: 24rpx;
 }
 
-.hero-amount {
-	font-size: 56rpx;
+.hero-title {
+	font-size: 40rpx;
 	font-weight: 800;
-	letter-spacing: 1rpx;
 }
 
 .hero-stats {
@@ -658,6 +719,20 @@ export default {
 
 .refresh {
 	color: #667085;
+	font-size: 24rpx;
+}
+
+.header-actions {
+	display: flex;
+	align-items: center;
+	gap: 18rpx;
+}
+
+.add-record-btn {
+	padding: 12rpx 22rpx;
+	border-radius: 999rpx;
+	background: #282321;
+	color: #ffffff;
 	font-size: 24rpx;
 }
 
@@ -727,10 +802,37 @@ export default {
 	border-bottom: 1px solid #f0f0f0;
 }
 
+.record-node {
+	position: relative;
+	width: 76rpx;
+	min-height: 116rpx;
+	margin-right: 20rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	align-self: stretch;
+}
+
+.node-line {
+	position: absolute;
+	left: 36rpx;
+	width: 2rpx;
+	background: #d0d5dd;
+}
+
+.top-line {
+	top: 0;
+	bottom: 58rpx;
+}
+
+.bottom-line {
+	top: 58rpx;
+	bottom: 0;
+}
+
 .record-dot {
 	width: 72rpx;
 	height: 72rpx;
-	margin-right: 20rpx;
 	border-radius: 50%;
 	background: #f5f7fb;
 	border: 1px solid #e4e7ec;
@@ -739,6 +841,7 @@ export default {
 	justify-content: center;
 	font-size: 22rpx;
 	font-weight: 700;
+	z-index: 1;
 }
 
 .record-main {
@@ -759,6 +862,48 @@ export default {
 	font-weight: 800;
 }
 
+.day-stat-list {
+	display: flex;
+	flex-direction: column;
+	gap: 16rpx;
+	margin-top: 24rpx;
+}
+
+.day-stat-card {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20rpx;
+	padding: 22rpx;
+	border-radius: 20rpx;
+	background: #f7f7f7;
+	border: 1px solid transparent;
+}
+
+.day-stat-card.active {
+	border-color: #282321;
+	background: #fffaf6;
+}
+
+.day-stat-date {
+	font-size: 28rpx;
+	font-weight: 700;
+}
+
+.day-stat-count {
+	margin-top: 6rpx;
+	color: #667085;
+	font-size: 23rpx;
+}
+
+.day-stat-amounts {
+	display: flex;
+	flex-direction: column;
+	gap: 6rpx;
+	text-align: right;
+	font-size: 24rpx;
+}
+
 .the-end {
 	margin: 22rpx 0 4rpx 92rpx;
 	color: #101828;
@@ -776,12 +921,12 @@ export default {
 	border-radius: 36rpx;
 	background: #ffffff;
 	box-shadow: 0 16rpx 50rpx rgba(16, 24, 40, 0.16);
-	justify-content: space-between;
+	justify-content: space-around;
 	box-sizing: border-box;
 }
 
 .tab-item {
-	width: 132rpx;
+	width: 180rpx;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -798,25 +943,6 @@ export default {
 
 .tab-icon {
 	font-size: 28rpx;
-}
-
-.tab-create {
-	width: 100rpx;
-	height: 100rpx;
-	margin-top: -52rpx;
-	border-radius: 50%;
-	background: #282321;
-	color: #ffffff;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	box-shadow: 0 14rpx 40rpx rgba(40, 35, 33, 0.35);
-}
-
-.tab-create text {
-	font-size: 64rpx;
-	line-height: 1;
-	margin-top: -8rpx;
 }
 
 .modal-mask {
