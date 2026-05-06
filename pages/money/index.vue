@@ -57,7 +57,6 @@
 								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 							</view>
 						</view>
-						<view class="the-end">The end</view>
 					</view>
 				</view>
 
@@ -125,7 +124,6 @@
 								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 							</view>
 						</view>
-						<view class="the-end">The end</view>
 					</view>
 				</view>
 			</scroll-view>
@@ -241,19 +239,12 @@ export default {
 		getEmptySummary() {
 			return {
 				totals: {
-					income: 0,
-					expense: 0,
 					deposit: 0,
-					consumableBalance: 0,
-					protectedBalance: 0,
 					periodIncome: 0,
 					periodExpense: 0,
 					periodDeposit: 0,
-					periodNet: 0,
-					monthExpense: 0,
-					monthIncome: 0
-				},
-				periodRecords: []
+					periodNet: 0
+				}
 			};
 		},
 		async callMoney(action, payload = {}, withToken = true) {
@@ -446,7 +437,7 @@ export default {
 			return { income: '入', expense: '支', deposit: '存' }[type] || '记';
 		},
 		recordDisplayName(record) {
-			return record.name || record.category_name || record.note || this.recordTypeText(record.type);
+			return record.name || record.note || this.recordTypeText(record.type);
 		},
 		recordAmountText(record) {
 			return `${record.type === 'expense' ? '-' : '+'}${this.formatMoney(record.amount)}`;
@@ -588,7 +579,7 @@ export default {
 }
 
 .hero-profit-loss {
-	color: #ffb4b4;
+	color: #c8171d;
 }
 
 .panel {
@@ -746,12 +737,6 @@ export default {
 .record-amount {
 	font-size: 32rpx;
 	font-weight: 800;
-}
-
-.the-end {
-	margin: 22rpx 0 4rpx 92rpx;
-	color: #101828;
-	font-size: 24rpx;
 }
 
 .bottom-tabbar {

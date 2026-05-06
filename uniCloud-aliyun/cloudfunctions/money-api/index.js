@@ -141,15 +141,6 @@ async function verifyToken(payload = {}) {
 	return ok({ valid: true, expiresAt: tokenPayload.exp });
 }
 
-async function getConsumableBalance() {
-	const res = await recordsCollection.limit(1000).get();
-	return (res.data || []).reduce((sum, record) => {
-		if (record.type === 'income') return sum + Number(record.amount || 0);
-		if (record.type === 'expense') return sum - Number(record.amount || 0);
-		return sum;
-	}, 0);
-}
-
 async function createRecord(payload = {}) {
 	const type = payload.type;
 	if (!['income', 'expense', 'deposit'].includes(type)) {
@@ -165,13 +156,6 @@ async function createRecord(payload = {}) {
 		amount = normalizeAmountToCents(payload.amount);
 	} catch (e) {
 		return fail(e.message);
-	}
-
-	if (type === 'expense') {
-		const balance = await getConsumableBalance();
-		if (balance < amount) {
-			return fail('可消费余额不足');
-		}
 	}
 
 	const createdAt = now();
@@ -190,71 +174,40 @@ async function createRecord(payload = {}) {
 
 async function listRecords(payload = {}) {
 	const limit = Math.min(Number(payload.limit || 100), 200);
-	const startAt = Number(payload.startAt || 0);
-	const endAt = Number(payload.endAt || 0);
 	const res = await recordsCollection
 		.orderBy('occurred_at', 'desc')
 		.orderBy('created_at', 'desc')
-		.limit(1000)
+		.limit(limit)
 		.get();
-	const records = (res.data || [])
-		.filter((record) => (!startAt || record.occurred_at >= startAt) && (!endAt || record.occurred_at < endAt))
-		.slice(0, limit);
-	return ok({ records });
+	return ok({ records: res.data || [] });
 }
 
 async function getSummary(payload = {}) {
 	const recordsRes = await recordsCollection.limit(1000).get();
 	const records = recordsRes.data || [];
-
 	const startAt = Number(payload.startAt || payload.monthStart || 0);
 	const endAt = Number(payload.endAt || payload.monthEnd || 0);
 	const totals = {
-		income: 0,
-		expense: 0,
 		deposit: 0,
-		consumableBalance: 0,
-		protectedBalance: 0,
 		periodIncome: 0,
 		periodExpense: 0,
 		periodDeposit: 0,
-		periodNet: 0,
-		monthExpense: 0,
-		monthIncome: 0
+		periodNet: 0
 	};
-	const periodRecords = [];
 
-	records.forEach((record) => {
+	for (const record of records) {
 		const amount = Number(record.amount || 0);
-		const inPeriod = startAt && endAt && record.occurred_at >= startAt && record.occurred_at < endAt;
-
-		if (record.type === 'income') {
-			totals.income += amount;
-			totals.consumableBalance += amount;
-			if (inPeriod) totals.periodIncome += amount;
-		}
-		if (record.type === 'expense') {
-			totals.expense += amount;
-			totals.consumableBalance -= amount;
-			if (inPeriod) totals.periodExpense += amount;
-		}
 		if (record.type === 'deposit') {
 			totals.deposit += amount;
-			totals.protectedBalance += amount;
-			if (inPeriod) totals.periodDeposit += amount;
 		}
-		if (inPeriod) {
-			periodRecords.push(record);
-		}
-	});
-	totals.monthIncome = totals.periodIncome;
-	totals.monthExpense = totals.periodExpense;
+		const inPeriod = startAt && endAt && record.occurred_at >= startAt && record.occurred_at < endAt;
+		if (!inPeriod) continue;
+		if (record.type === 'income') totals.periodIncome += amount;
+		else if (record.type === 'expense') totals.periodExpense += amount;
+		else if (record.type === 'deposit') totals.periodDeposit += amount;
+	}
 	totals.periodNet = totals.periodIncome - totals.periodExpense + totals.periodDeposit;
-
-	return ok({
-		totals,
-		periodRecords
-	});
+	return ok({ totals });
 }
 
 exports.main = async (event = {}) => {
