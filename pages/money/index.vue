@@ -21,7 +21,7 @@
 			<scroll-view scroll-y class="content">
 				<view v-if="activeTab === 'today'" class="hero-card">
 					<view class="hero-date">{{ todayText }}</view>
-					<view class="hero-profit-label">今日盈亏</view>
+					<view class="hero-profit-label">今日收支</view>
 					<view :class="['hero-profit-amount', todayProfitLoss < 0 ? 'hero-profit-loss' : '']">
 						{{ formatMoney(todayProfitLoss, true) }}
 					</view>
