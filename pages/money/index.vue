@@ -411,17 +411,28 @@ export default {
 			return `${hours}:${minutes}`;
 		},
 		getRecordTimestamp() {
-			const [year, month, day] = this.recordForm.occurredDate.split('-').map(Number);
-			const [hour, minute] = this.recordForm.occurredTime.split(':').map(Number);
-			return new Date(year, month - 1, day, hour, minute, 0, 0).getTime();
+			const dateStr = this.recordForm.occurredDate || this.formatDateInput(Date.now());
+			const timeStr = this.recordForm.occurredTime || this.formatTimeInput(Date.now());
+			const [year, month, day] = dateStr.split('-').map(Number);
+			const [hour, minute] = timeStr.split(':').map(Number);
+			const h = Number.isFinite(hour) ? hour : new Date().getHours();
+			const min = Number.isFinite(minute) ? minute : new Date().getMinutes();
+			const t = new Date(year, month - 1, day, h, min, 0, 0).getTime();
+			return Number.isFinite(t) ? t : Date.now();
 		},
 		formatDateText(timestamp) {
 			const date = new Date(timestamp);
 			return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
 		},
 		shortDate(timestamp) {
-			const date = new Date(timestamp);
-			return `${String(date.getMonth() + 1).padStart(2, '0')}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+			const ts = Number(timestamp);
+			if (!Number.isFinite(ts)) return '';
+			const date = new Date(ts);
+			const m = date.getMonth() + 1;
+			const d = date.getDate();
+			const hh = String(date.getHours()).padStart(2, '0');
+			const mm = String(date.getMinutes()).padStart(2, '0');
+			return `${m}月${d}日 ${hh}:${mm}`;
 		},
 		formatMoney(cents, withSign = false) {
 			const value = Number(cents || 0) / 100;
