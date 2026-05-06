@@ -217,10 +217,13 @@ async function listRecords(payload = {}) {
 }
 
 async function getSummary(payload = {}) {
-	const recordsRes = await recordsCollection.limit(1000).get();
-	const records = recordsRes.data || [];
 	const startAt = Number(payload.startAt || payload.monthStart || 0);
 	const endAt = Number(payload.endAt || payload.monthEnd || 0);
+	const hasPeriod = startAt > 0 && endAt > startAt;
+
+	const $ = db.command.aggregate;
+	const _ = db.command;
+
 	const totals = {
 		deposit: 0,
 		periodIncome: 0,
@@ -229,17 +232,47 @@ async function getSummary(payload = {}) {
 		periodNet: 0
 	};
 
-	for (const record of records) {
-		const amount = Number(record.amount || 0);
-		if (record.type === 'deposit') {
-			totals.deposit += amount;
-		}
-		const inPeriod = startAt && endAt && record.occurred_at >= startAt && record.occurred_at < endAt;
-		if (!inPeriod) continue;
-		if (record.type === 'income') totals.periodIncome += amount;
-		else if (record.type === 'expense') totals.periodExpense += amount;
-		else if (record.type === 'deposit') totals.periodDeposit += amount;
+	const depositAllRes = await recordsCollection
+		.aggregate()
+		.match({ type: 'deposit' })
+		.group({
+			_id: null,
+			sum: $.sum('$amount')
+		})
+		.end();
+
+	const depositAllRow = depositAllRes.data && depositAllRes.data[0];
+	if (depositAllRow) {
+		totals.deposit = Number(depositAllRow.sum || 0);
 	}
+
+	if (hasPeriod) {
+		const range = { occurred_at: _.gte(startAt).and(_.lt(endAt)) };
+		const sumType = (type) =>
+			recordsCollection
+				.aggregate()
+				.match({ type, ...range })
+				.group({
+					_id: null,
+					sum: $.sum('$amount')
+				})
+				.end();
+
+		const [incRes, expRes, depRes] = await Promise.all([
+			sumType('income'),
+			sumType('expense'),
+			sumType('deposit')
+		]);
+
+		const pick = (res) => {
+			const row = res.data && res.data[0];
+			return row ? Number(row.sum || 0) : 0;
+		};
+		totals.periodIncome = pick(incRes);
+		totals.periodExpense = pick(expRes);
+		totals.periodDeposit = pick(depRes);
+	}
+
 	totals.periodNet = totals.periodIncome - totals.periodExpense + totals.periodDeposit;
 	return ok({ totals });
 }
