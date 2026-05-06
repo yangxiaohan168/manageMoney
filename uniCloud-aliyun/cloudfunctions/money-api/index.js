@@ -155,6 +155,10 @@ async function createRecord(payload = {}) {
 	if (!['income', 'expense', 'deposit'].includes(type)) {
 		return fail('记录类型不正确');
 	}
+	const name = String(payload.name || '').trim();
+	if (!name) {
+		return fail('请输入记录名');
+	}
 
 	let amount = 0;
 	try {
@@ -173,10 +177,8 @@ async function createRecord(payload = {}) {
 	const createdAt = now();
 	const record = {
 		type,
+		name,
 		amount,
-		category_id: '',
-		category_name: payload.name || getRecordTypeName(type),
-		category_can_consume: type !== 'deposit',
 		note: String(payload.note || '').trim(),
 		occurred_at: Number(payload.occurredAt || createdAt),
 		created_at: createdAt,
@@ -184,14 +186,6 @@ async function createRecord(payload = {}) {
 	};
 	const res = await recordsCollection.add(record);
 	return ok({ id: res.id });
-}
-
-function getRecordTypeName(type) {
-	return {
-		income: '收入',
-		expense: '支出',
-		deposit: '存款'
-	}[type] || '记录';
 }
 
 async function listRecords(payload = {}) {

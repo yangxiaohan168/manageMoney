@@ -1,6 +1,6 @@
 {
 	"bsonType": "object",
-	"required": ["type", "amount", "occurred_at", "created_at"],
+	"required": ["type", "name", "amount", "occurred_at", "created_at"],
 	"permission": {
 		"read": "false",
 		"create": "false",
@@ -34,17 +34,11 @@
 			"title": "金额，单位分",
 			"minimum": 1
 		},
-		"category_id": {
+		"name": {
 			"bsonType": "string",
-			"title": "分类 ID"
-		},
-		"category_name": {
-			"bsonType": "string",
-			"title": "分类名称快照"
-		},
-		"category_can_consume": {
-			"bsonType": "bool",
-			"title": "分类是否可消费快照"
+			"title": "记录名",
+			"minLength": 1,
+			"maxLength": 40
 		},
 		"note": {
 			"bsonType": "string",

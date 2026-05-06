@@ -19,7 +19,7 @@
 
 		<view v-else class="app-shell">
 			<scroll-view scroll-y class="content">
-				<view class="hero-card">
+				<view v-if="activeTab === 'today'" class="hero-card">
 					<view class="hero-row">
 						<view>
 							<view class="hero-date">{{ todayText }}</view>
@@ -60,18 +60,14 @@
 							<text>支出</text>
 							<strong class="danger-text">{{ formatMoney(todayTotals.expense) }}</strong>
 						</view>
-						<view>
-							<text>存款</text>
-							<strong>{{ formatMoney(todayTotals.deposit) }}</strong>
-						</view>
 					</view>
 					<view v-if="!todayRecords.length" class="empty">今天还没有记录，点底部 + 记一笔。</view>
 					<view v-else class="timeline">
 						<view v-for="record in todayRecords" :key="record._id" class="record-item">
 							<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
 							<view class="record-main">
-								<view class="record-name">{{ record.note || recordTypeText(record.type) }}</view>
-								<view class="record-note">{{ recordTypeText(record.type) }}</view>
+								<view class="record-name">{{ recordDisplayName(record) }}</view>
+								<view class="record-note">{{ recordTypeText(record.type) }}{{ record.note ? ' · ' + record.note : '' }}</view>
 							</view>
 							<view class="record-side">
 								<view :class="['record-amount', record.type === 'expense' ? 'danger-text' : '']">
@@ -84,7 +80,7 @@
 					</view>
 				</view>
 
-				<view v-else class="panel">
+				<view v-else-if="activeTab === 'stats'" class="panel">
 					<view class="section-title">统计</view>
 					<view class="period-tabs">
 						<text
@@ -121,13 +117,44 @@
 						<view v-for="record in summary.periodRecords" :key="record._id" class="record-item">
 							<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
 							<view class="record-main">
-								<view class="record-name">{{ record.note || recordTypeText(record.type) }}</view>
-								<view class="record-note">{{ recordTypeText(record.type) }}</view>
+								<view class="record-name">{{ recordDisplayName(record) }}</view>
+								<view class="record-note">{{ recordTypeText(record.type) }}{{ record.note ? ' · ' + record.note : '' }}</view>
 							</view>
 							<view class="record-side">
 								<view :class="['record-amount', record.type === 'expense' ? 'danger-text' : '']">
 									{{ recordAmountText(record) }}
 								</view>
+								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
+							</view>
+						</view>
+						<view class="the-end">The end</view>
+					</view>
+				</view>
+
+				<view v-else class="panel">
+					<view class="section-header">
+						<view>
+							<view class="section-title">存款</view>
+							<view class="section-subtitle">单独记录不可消费资金</view>
+						</view>
+						<text class="refresh" @click="openRecordForm('deposit')">新增存款</text>
+					</view>
+					<view class="summary-strip">
+						<view>
+							<text>总存款</text>
+							<strong>{{ formatMoney(summary.totals.deposit) }}</strong>
+						</view>
+					</view>
+					<view v-if="!depositRecords.length" class="empty">还没有存款记录。</view>
+					<view v-else class="timeline">
+						<view v-for="record in depositRecords" :key="record._id" class="record-item">
+							<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+							<view class="record-main">
+								<view class="record-name">{{ recordDisplayName(record) }}</view>
+								<view class="record-note">存款{{ record.note ? ' · ' + record.note : '' }}</view>
+							</view>
+							<view class="record-side">
+								<view class="record-amount">{{ recordAmountText(record) }}</view>
 								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 							</view>
 						</view>
@@ -141,12 +168,16 @@
 					<text class="tab-icon">今</text>
 					<text>今日记录</text>
 				</view>
-				<view class="tab-create" @click="openRecordForm">
+				<view class="tab-create" @click="openRecordForm()">
 					<text>+</text>
 				</view>
 				<view :class="['tab-item', activeTab === 'stats' ? 'active' : '']" @click="activeTab = 'stats'">
 					<text class="tab-icon">统</text>
 					<text>统计</text>
+				</view>
+				<view :class="['tab-item', activeTab === 'deposit' ? 'active' : '']" @click="activeTab = 'deposit'">
+					<text class="tab-icon">存</text>
+					<text>存款</text>
 				</view>
 			</view>
 		</view>
@@ -154,14 +185,18 @@
 		<view v-if="showRecordForm" class="modal-mask">
 			<view class="modal">
 				<view class="modal-title">新建记录</view>
-				<view class="type-tabs">
+				<view v-if="recordForm.type !== 'deposit'" class="type-tabs">
 					<text :class="{ active: recordForm.type === 'income' }" @click="recordForm.type = 'income'">收入</text>
 					<text :class="{ active: recordForm.type === 'expense' }" @click="recordForm.type = 'expense'">支出</text>
-					<text :class="{ active: recordForm.type === 'deposit' }" @click="recordForm.type = 'deposit'">存款</text>
 				</view>
+				<view v-else class="deposit-form-tip">新增存款</view>
+				<input class="input" v-model="recordForm.name" placeholder="记录名，如 买菜 / 公众号收入 / 定期存款" />
 				<input class="input" type="digit" v-model="recordForm.amount" placeholder="金额，如 12.5" />
 				<picker mode="date" :value="recordForm.occurredDate" @change="recordForm.occurredDate = $event.detail.value">
 					<view class="picker">{{ recordForm.occurredDate }}</view>
+				</picker>
+				<picker mode="time" :value="recordForm.occurredTime" @change="recordForm.occurredTime = $event.detail.value">
+					<view class="picker">{{ recordForm.occurredTime }}</view>
 				</picker>
 				<input class="input" v-model="recordForm.note" placeholder="备注，可不填" />
 				<view class="modal-actions">
@@ -193,9 +228,11 @@ export default {
 			showRecordForm: false,
 			recordForm: {
 				type: 'expense',
+				name: '',
 				amount: '',
 				note: '',
-				occurredDate: ''
+				occurredDate: '',
+				occurredTime: ''
 			},
 			periodOptions: [
 				{ label: '日', value: 'day' },
@@ -218,7 +255,10 @@ export default {
 		},
 		todayRecords() {
 			const range = this.getPeriodRange('day');
-			return this.records.filter((record) => record.occurred_at >= range.startAt && record.occurred_at < range.endAt);
+			return this.records.filter((record) => record.type !== 'deposit' && record.occurred_at >= range.startAt && record.occurred_at < range.endAt);
+		},
+		depositRecords() {
+			return this.records.filter((record) => record.type === 'deposit');
 		},
 		todayTotals() {
 			return this.sumRecords(this.todayRecords);
@@ -230,6 +270,7 @@ export default {
 	},
 	onLoad() {
 		this.recordForm.occurredDate = this.formatDateInput(Date.now());
+		this.recordForm.occurredTime = this.formatTimeInput(Date.now());
 		this.init();
 	},
 	methods: {
@@ -327,16 +368,21 @@ export default {
 			this.statPeriod = period;
 			this.loadAll();
 		},
-		openRecordForm() {
+		openRecordForm(type = 'expense') {
 			this.recordForm = {
-				type: 'expense',
+				type,
+				name: '',
 				amount: '',
 				note: '',
-				occurredDate: this.formatDateInput(Date.now())
+				occurredDate: this.formatDateInput(Date.now()),
+				occurredTime: this.formatTimeInput(Date.now())
 			};
 			this.showRecordForm = true;
 		},
 		async submitRecord() {
+			if (!this.recordForm.name.trim()) {
+				return uni.showToast({ title: '请输入记录名', icon: 'none' });
+			}
 			if (!this.recordForm.amount) {
 				return uni.showToast({ title: '请输入金额', icon: 'none' });
 			}
@@ -345,9 +391,10 @@ export default {
 			try {
 				await this.callMoney('createRecord', {
 					type: this.recordForm.type,
+					name: this.recordForm.name,
 					amount: this.recordForm.amount,
 					note: this.recordForm.note,
-					occurredAt: new Date(`${this.recordForm.occurredDate} 12:00:00`).getTime()
+					occurredAt: this.getRecordTimestamp()
 				});
 				this.showRecordForm = false;
 				await this.loadAll();
@@ -393,6 +440,17 @@ export default {
 			const day = String(date.getDate()).padStart(2, '0');
 			return `${year}-${month}-${day}`;
 		},
+		formatTimeInput(timestamp) {
+			const date = new Date(timestamp);
+			const hours = String(date.getHours()).padStart(2, '0');
+			const minutes = String(date.getMinutes()).padStart(2, '0');
+			return `${hours}:${minutes}`;
+		},
+		getRecordTimestamp() {
+			const [year, month, day] = this.recordForm.occurredDate.split('-').map(Number);
+			const [hour, minute] = this.recordForm.occurredTime.split(':').map(Number);
+			return new Date(year, month - 1, day, hour, minute, 0, 0).getTime();
+		},
 		formatDateText(timestamp) {
 			const date = new Date(timestamp);
 			return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
@@ -411,6 +469,9 @@ export default {
 		},
 		recordIcon(type) {
 			return { income: '入', expense: '支', deposit: '存' }[type] || '记';
+		},
+		recordDisplayName(record) {
+			return record.name || record.category_name || record.note || this.recordTypeText(record.type);
 		},
 		recordAmountText(record) {
 			return `${record.type === 'expense' ? '-' : '+'}${this.formatMoney(record.amount)}`;
@@ -720,7 +781,7 @@ export default {
 }
 
 .tab-item {
-	width: 180rpx;
+	width: 132rpx;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -800,6 +861,16 @@ export default {
 .type-tabs .active {
 	background: #282321;
 	color: #ffffff;
+}
+
+.deposit-form-tip {
+	display: inline-flex;
+	margin-bottom: 22rpx;
+	padding: 14rpx 26rpx;
+	border-radius: 999rpx;
+	background: #282321;
+	color: #ffffff;
+	font-size: 26rpx;
 }
 
 .modal-actions {
