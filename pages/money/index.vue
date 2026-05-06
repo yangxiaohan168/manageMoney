@@ -38,13 +38,13 @@
 							<text class="add-record-btn" @click="openRecordForm()">+ 新建</text>
 						</view>
 					</view>
-					<view v-if="!todayRecords.length" class="empty">今天还没有记录，点“+ 新建”记一笔。</view>
-					<view v-else class="timeline">
-						<view v-for="(record, index) in todayRecords" :key="record._id" class="record-item">
+					<view v-if="!todayList.length && !todayLoading" class="empty">今天还没有记录，点“+ 新建”记一笔。</view>
+					<view v-else-if="todayList.length" class="timeline">
+						<view v-for="(record, index) in todayList" :key="record._id" class="record-item">
 							<view class="record-node">
 								<view v-if="index !== 0" class="node-line top-line"></view>
 								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
-								<view v-if="index !== todayRecords.length - 1" class="node-line bottom-line"></view>
+								<view v-if="index !== todayList.length - 1" class="node-line bottom-line"></view>
 							</view>
 							<view class="record-main">
 								<view class="record-name">{{ recordDisplayName(record) }}</view>
@@ -57,7 +57,12 @@
 								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 							</view>
 						</view>
+						<view v-if="todayHasMore" class="load-more" @click="fetchTodayRecords(false)">
+							<text v-if="todayLoading">加载中…</text>
+							<text v-else>加载更多（{{ todayList.length }}/{{ todayTotal }}）</text>
+						</view>
 					</view>
+					<view v-else-if="todayLoading" class="empty">加载中…</view>
 				</view>
 
 				<view v-else-if="activeTab === 'stats'" class="panel">
@@ -99,7 +104,9 @@
 							<view class="section-title">存款</view>
 							<view class="section-subtitle">存款记录</view>
 						</view>
-						<text class="refresh" @click="openRecordForm('deposit')">新增存款</text>
+						<view class="header-actions">
+							<text class="add-record-btn" @click="openRecordForm('deposit')">新建存款</text>
+						</view>
 					</view>
 					<view class="summary-strip">
 						<view>
@@ -107,13 +114,13 @@
 							<strong>{{ formatMoney(summary.totals.deposit) }}</strong>
 						</view>
 					</view>
-					<view v-if="!depositRecords.length" class="empty">还没有存款记录。</view>
-					<view v-else class="timeline">
-						<view v-for="(record, index) in depositRecords" :key="record._id" class="record-item">
+					<view v-if="!depositList.length && !depositLoading" class="empty">还没有存款记录。</view>
+					<view v-else-if="depositList.length" class="timeline">
+						<view v-for="(record, index) in depositList" :key="record._id" class="record-item">
 							<view class="record-node">
 								<view v-if="index !== 0" class="node-line top-line"></view>
 								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
-								<view v-if="index !== depositRecords.length - 1" class="node-line bottom-line"></view>
+								<view v-if="index !== depositList.length - 1" class="node-line bottom-line"></view>
 							</view>
 							<view class="record-main">
 								<view class="record-name">{{ recordDisplayName(record) }}</view>
@@ -124,7 +131,12 @@
 								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 							</view>
 						</view>
+						<view v-if="depositHasMore" class="load-more" @click="fetchDepositRecords(false)">
+							<text v-if="depositLoading">加载中…</text>
+							<text v-else>加载更多（{{ depositList.length }}/{{ depositTotal }}）</text>
+						</view>
 					</view>
+					<view v-else-if="depositLoading" class="empty">加载中…</view>
 				</view>
 			</scroll-view>
 
@@ -151,7 +163,7 @@
 					<text :class="{ active: recordForm.type === 'income' }" @click="recordForm.type = 'income'">收入</text>
 					<text :class="{ active: recordForm.type === 'expense' }" @click="recordForm.type = 'expense'">支出</text>
 				</view>
-				<view v-else class="deposit-form-tip">新增存款</view>
+				<view v-else class="deposit-form-tip">新建存款</view>
 				<input class="input" v-model="recordForm.name" placeholder="记录名，如 买菜 / 公众号收入 / 定期存款" />
 				<input class="input" type="digit" v-model="recordForm.amount" placeholder="金额，如 12.5" />
 				<picker mode="date" :value="recordForm.occurredDate" @change="recordForm.occurredDate = $event.detail.value">
@@ -185,8 +197,18 @@ export default {
 			confirmPasswordInput: '',
 			activeTab: 'today',
 			statPeriod: 'month',
-			records: [],
 			summary: this.getEmptySummary(),
+			todaySummary: this.getEmptySummary(),
+			todayList: [],
+			todayPage: 1,
+			todayTotal: 0,
+			todayHasMore: false,
+			todayLoading: false,
+			depositList: [],
+			depositPage: 1,
+			depositTotal: 0,
+			depositHasMore: false,
+			depositLoading: false,
 			showRecordForm: false,
 			recordForm: {
 				type: 'expense',
@@ -212,18 +234,10 @@ export default {
 			const date = new Date();
 			return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 		},
-		todayRecords() {
-			const range = this.getPeriodRange('day');
-			return this.records.filter((record) => record.type !== 'deposit' && record.occurred_at >= range.startAt && record.occurred_at < range.endAt);
-		},
-		depositRecords() {
-			return this.records.filter((record) => record.type === 'deposit');
-		},
-		todayTotals() {
-			return this.sumRecords(this.todayRecords);
-		},
 		todayProfitLoss() {
-			return this.todayTotals.income - this.todayTotals.expense;
+			const t = this.todaySummary && this.todaySummary.totals;
+			if (!t) return 0;
+			return (t.periodIncome || 0) - (t.periodExpense || 0);
 		},
 		statRangeLabel() {
 			const range = this.getPeriodRange(this.statPeriod);
@@ -306,22 +320,100 @@ export default {
 				this.submitting = false;
 			}
 		},
+		async loadSummary() {
+			const range = this.getPeriodRange(this.statPeriod);
+			const dayRange = this.getPeriodRange('day');
+			const [summaryData, todaySummaryData] = await Promise.all([
+				this.callMoney('getSummary', range),
+				this.callMoney('getSummary', dayRange)
+			]);
+			this.summary = summaryData || this.getEmptySummary();
+			this.todaySummary = todaySummaryData || this.getEmptySummary();
+		},
 		async loadAll() {
 			try {
-				const range = this.getPeriodRange(this.statPeriod);
-				const [recordData, summaryData] = await Promise.all([
-					this.callMoney('listRecords', { limit: 200 }),
-					this.callMoney('getSummary', range)
-				]);
-				this.records = recordData.records || [];
-				this.summary = summaryData || this.getEmptySummary();
+				await this.loadSummary();
+				await Promise.all([this.fetchTodayRecords(true), this.fetchDepositRecords(true)]);
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
 			}
 		},
-		changePeriod(period) {
+		async fetchTodayRecords(reset) {
+			if (this.todayLoading) return;
+			if (reset) {
+				this.todayPage = 1;
+				this.todayList = [];
+				this.todayHasMore = false;
+				this.todayTotal = 0;
+			} else if (!this.todayHasMore) {
+				return;
+			}
+			const page = reset ? 1 : this.todayPage + 1;
+			this.todayLoading = true;
+			try {
+				const range = this.getPeriodRange('day');
+				const data = await this.callMoney('listRecords', {
+					types: ['income', 'expense'],
+					startAt: range.startAt,
+					endAt: range.endAt,
+					page,
+					pageSize: 10
+				});
+				const list = data.records || [];
+				if (reset) {
+					this.todayList = list;
+				} else {
+					this.todayList = this.todayList.concat(list);
+				}
+				this.todayPage = data.page;
+				this.todayTotal = data.total;
+				this.todayHasMore = !!data.hasMore;
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.todayLoading = false;
+			}
+		},
+		async fetchDepositRecords(reset) {
+			if (this.depositLoading) return;
+			if (reset) {
+				this.depositPage = 1;
+				this.depositList = [];
+				this.depositHasMore = false;
+				this.depositTotal = 0;
+			} else if (!this.depositHasMore) {
+				return;
+			}
+			const page = reset ? 1 : this.depositPage + 1;
+			this.depositLoading = true;
+			try {
+				const data = await this.callMoney('listRecords', {
+					types: ['deposit'],
+					page,
+					pageSize: 10
+				});
+				const list = data.records || [];
+				if (reset) {
+					this.depositList = list;
+				} else {
+					this.depositList = this.depositList.concat(list);
+				}
+				this.depositPage = data.page;
+				this.depositTotal = data.total;
+				this.depositHasMore = !!data.hasMore;
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.depositLoading = false;
+			}
+		},
+		async changePeriod(period) {
 			this.statPeriod = period;
-			this.loadAll();
+			try {
+				await this.loadSummary();
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			}
 		},
 		openRecordForm(type = 'expense') {
 			this.recordForm = {
@@ -378,15 +470,6 @@ export default {
 				end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
 			}
 			return { startAt: start.getTime(), endAt: end.getTime() };
-		},
-		sumRecords(records) {
-			return records.reduce(
-				(sum, record) => {
-					sum[record.type] += Number(record.amount || 0);
-					return sum;
-				},
-				{ income: 0, expense: 0, deposit: 0 }
-			);
 		},
 		formatDateInput(timestamp) {
 			const date = new Date(timestamp);
@@ -458,6 +541,14 @@ export default {
 	padding: 80rpx 32rpx;
 	text-align: center;
 	color: #667085;
+}
+
+.load-more {
+	margin: 8rpx 0 16rpx;
+	padding: 28rpx;
+	text-align: center;
+	color: #667085;
+	font-size: 26rpx;
 }
 
 .auth-page {

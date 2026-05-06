@@ -173,13 +173,47 @@ async function createRecord(payload = {}) {
 }
 
 async function listRecords(payload = {}) {
-	const limit = Math.min(Number(payload.limit || 100), 200);
-	const res = await recordsCollection
+	const pageSize = Math.min(Math.max(Number(payload.pageSize) || 10, 1), 50);
+	const page = Math.max(Number(payload.page) || 1, 1);
+	const skip = (page - 1) * pageSize;
+
+	const types = payload.types;
+	const startAt = Number(payload.startAt || 0);
+	const endAt = Number(payload.endAt || 0);
+
+	const _ = db.command;
+	const cond = {};
+
+	if (Array.isArray(types) && types.length > 0) {
+		cond.type = types.length === 1 ? types[0] : _.in(types);
+	}
+	if (startAt && endAt) {
+		cond.occurred_at = _.gte(startAt).and(_.lt(endAt));
+	}
+
+	const condKeys = Object.keys(cond);
+	const base = condKeys.length > 0 ? recordsCollection.where(cond) : recordsCollection;
+
+	const countRes = await base.count();
+	const total = countRes.total || 0;
+
+	const res = await (condKeys.length > 0 ? recordsCollection.where(cond) : recordsCollection)
 		.orderBy('occurred_at', 'desc')
 		.orderBy('created_at', 'desc')
-		.limit(limit)
+		.skip(skip)
+		.limit(pageSize)
 		.get();
-	return ok({ records: res.data || [] });
+
+	const records = res.data || [];
+	const hasMore = skip + records.length < total;
+
+	return ok({
+		records,
+		total,
+		page,
+		pageSize,
+		hasMore
+	});
 }
 
 async function getSummary(payload = {}) {
