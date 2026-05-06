@@ -20,22 +20,10 @@
 		<view v-else class="app-shell">
 			<scroll-view scroll-y class="content">
 				<view v-if="activeTab === 'today'" class="hero-card">
-					<view class="hero-row">
-						<view>
-							<view class="hero-date">{{ todayText }}</view>
-							<view class="hero-name">towYangLife</view>
-						</view>
-						<view class="hero-title">今日收支</view>
-					</view>
-					<view class="hero-stats">
-						<view>
-							<text class="stat-label">今日收入</text>
-							<text class="stat-value">{{ formatMoney(todayTotals.income) }}</text>
-						</view>
-						<view>
-							<text class="stat-label">今日支出</text>
-							<text class="stat-value danger-text">{{ formatMoney(todayTotals.expense) }}</text>
-						</view>
+					<view class="hero-date">{{ todayText }}</view>
+					<view class="hero-profit-label">今日盈亏</view>
+					<view :class="['hero-profit-amount', todayProfitLoss < 0 ? 'hero-profit-loss' : '']">
+						{{ formatMoney(todayProfitLoss, true) }}
 					</view>
 				</view>
 
@@ -102,49 +90,6 @@
 						<view class="summary-card">
 							<text>周期净额</text>
 							<strong>{{ formatMoney(summary.totals.periodNet, true) }}</strong>
-						</view>
-					</view>
-					<view class="section-title small-title">周期明细</view>
-					<view v-if="!summary.periodRecords.length" class="empty">当前周期暂无记录。</view>
-					<view v-else>
-						<view class="day-stat-list">
-							<view
-								v-for="day in statsDayGroups"
-								:key="day.key"
-								:class="['day-stat-card', selectedStatDay === day.key ? 'active' : '']"
-								@click="selectedStatDay = day.key"
-							>
-								<view>
-									<view class="day-stat-date">{{ day.label }}</view>
-									<view class="day-stat-count">{{ day.records.length }} 条记录</view>
-								</view>
-								<view class="day-stat-amounts">
-									<text>入 {{ formatMoney(day.income) }}</text>
-									<text class="danger-text">出 {{ formatMoney(day.expense) }}</text>
-									<text>存 {{ formatMoney(day.deposit) }}</text>
-								</view>
-							</view>
-						</view>
-						<view class="section-title small-title">{{ selectedStatDayLabel }}明细</view>
-						<view class="timeline">
-						<view v-for="(record, index) in selectedStatRecords" :key="record._id" class="record-item">
-							<view class="record-node">
-								<view v-if="index !== 0" class="node-line top-line"></view>
-								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
-								<view v-if="index !== selectedStatRecords.length - 1" class="node-line bottom-line"></view>
-							</view>
-							<view class="record-main">
-								<view class="record-name">{{ recordDisplayName(record) }}</view>
-								<view class="record-note">{{ recordTypeText(record.type) }}{{ record.note ? ' · ' + record.note : '' }}</view>
-							</view>
-							<view class="record-side">
-								<view :class="['record-amount', record.type === 'expense' ? 'danger-text' : '']">
-									{{ recordAmountText(record) }}
-								</view>
-								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
-							</view>
-						</view>
-						<view class="the-end">The end</view>
 						</view>
 					</view>
 				</view>
@@ -242,7 +187,6 @@ export default {
 			confirmPasswordInput: '',
 			activeTab: 'today',
 			statPeriod: 'month',
-			selectedStatDay: '',
 			records: [],
 			summary: this.getEmptySummary(),
 			showRecordForm: false,
@@ -270,9 +214,6 @@ export default {
 			const date = new Date();
 			return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 		},
-		totalAssets() {
-			return this.summary.totals.consumableBalance + this.summary.totals.protectedBalance;
-		},
 		todayRecords() {
 			const range = this.getPeriodRange('day');
 			return this.records.filter((record) => record.type !== 'deposit' && record.occurred_at >= range.startAt && record.occurred_at < range.endAt);
@@ -283,36 +224,12 @@ export default {
 		todayTotals() {
 			return this.sumRecords(this.todayRecords);
 		},
+		todayProfitLoss() {
+			return this.todayTotals.income - this.todayTotals.expense;
+		},
 		statRangeLabel() {
 			const range = this.getPeriodRange(this.statPeriod);
 			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
-		},
-		statsDayGroups() {
-			const map = {};
-			(this.summary.periodRecords || []).forEach((record) => {
-				const key = this.dayKey(record.occurred_at);
-				if (!map[key]) {
-					map[key] = {
-						key,
-						label: this.formatDateText(record.occurred_at),
-						income: 0,
-						expense: 0,
-						deposit: 0,
-						records: []
-					};
-				}
-				map[key][record.type] += Number(record.amount || 0);
-				map[key].records.push(record);
-			});
-			return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
-		},
-		selectedStatRecords() {
-			const group = this.statsDayGroups.find((item) => item.key === this.selectedStatDay);
-			return group ? group.records : [];
-		},
-		selectedStatDayLabel() {
-			const group = this.statsDayGroups.find((item) => item.key === this.selectedStatDay);
-			return group ? group.label : '';
 		}
 	},
 	onLoad() {
@@ -407,24 +324,13 @@ export default {
 				]);
 				this.records = recordData.records || [];
 				this.summary = summaryData || this.getEmptySummary();
-				this.ensureSelectedStatDay();
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
 			}
 		},
 		changePeriod(period) {
 			this.statPeriod = period;
-			this.selectedStatDay = '';
 			this.loadAll();
-		},
-		ensureSelectedStatDay() {
-			if (!this.statsDayGroups.length) {
-				this.selectedStatDay = '';
-				return;
-			}
-			if (!this.statsDayGroups.some((item) => item.key === this.selectedStatDay)) {
-				this.selectedStatDay = this.statsDayGroups[0].key;
-			}
 		},
 		openRecordForm(type = 'expense') {
 			this.recordForm = {
@@ -512,10 +418,6 @@ export default {
 		formatDateText(timestamp) {
 			const date = new Date(timestamp);
 			return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
-		},
-		dayKey(timestamp) {
-			const date = new Date(timestamp);
-			return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 		},
 		shortDate(timestamp) {
 			const date = new Date(timestamp);
@@ -641,8 +543,6 @@ export default {
 	color: #ffffff;
 }
 
-.hero-row,
-.hero-stats,
 .section-header,
 .record-item,
 .summary-strip,
@@ -652,7 +552,6 @@ export default {
 	align-items: center;
 }
 
-.hero-row,
 .section-header,
 .record-item,
 .summary-strip {
@@ -664,40 +563,21 @@ export default {
 	font-weight: 700;
 }
 
-.hero-name {
-	margin-top: 18rpx;
-	color: rgba(255, 255, 255, 0.65);
+.hero-profit-label {
+	margin-top: 10rpx;
+	color: rgba(255, 255, 255, 0.58);
 	font-size: 24rpx;
 }
 
-.hero-title {
-	font-size: 40rpx;
+.hero-profit-amount {
+	margin-top: 12rpx;
+	font-size: 56rpx;
 	font-weight: 800;
+	letter-spacing: 1rpx;
 }
 
-.hero-stats {
-	gap: 20rpx;
-	margin-top: 34rpx;
-}
-
-.hero-stats view {
-	flex: 1;
-}
-
-.stat-label,
-.stat-value {
-	display: block;
-}
-
-.stat-label {
-	color: rgba(255, 255, 255, 0.58);
-	font-size: 22rpx;
-}
-
-.stat-value {
-	margin-top: 8rpx;
-	font-size: 26rpx;
-	font-weight: 700;
+.hero-profit-loss {
+	color: #ffb4b4;
 }
 
 .panel {
@@ -710,11 +590,6 @@ export default {
 	font-size: 32rpx;
 	font-weight: 800;
 	margin-bottom: 18rpx;
-}
-
-.small-title {
-	margin-top: 28rpx;
-	font-size: 28rpx;
 }
 
 .refresh {
@@ -860,48 +735,6 @@ export default {
 .record-amount {
 	font-size: 32rpx;
 	font-weight: 800;
-}
-
-.day-stat-list {
-	display: flex;
-	flex-direction: column;
-	gap: 16rpx;
-	margin-top: 24rpx;
-}
-
-.day-stat-card {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 20rpx;
-	padding: 22rpx;
-	border-radius: 20rpx;
-	background: #f7f7f7;
-	border: 1px solid transparent;
-}
-
-.day-stat-card.active {
-	border-color: #282321;
-	background: #fffaf6;
-}
-
-.day-stat-date {
-	font-size: 28rpx;
-	font-weight: 700;
-}
-
-.day-stat-count {
-	margin-top: 6rpx;
-	color: #667085;
-	font-size: 23rpx;
-}
-
-.day-stat-amounts {
-	display: flex;
-	flex-direction: column;
-	gap: 6rpx;
-	text-align: right;
-	font-size: 24rpx;
 }
 
 .the-end {
