@@ -9,169 +9,164 @@
 				<view class="auth-desc">
 					{{ hasPassword ? '本机缓存验证通过后可直接进入。' : '密码会加密存入云数据库，用于防止外人拿到链接后管理账本。' }}
 				</view>
-
 				<input class="input" type="password" v-model="passwordInput" placeholder="请输入密码" />
-				<input
-					v-if="!hasPassword"
-					class="input"
-					type="password"
-					v-model="confirmPasswordInput"
-					placeholder="再次输入密码"
-				/>
+				<input v-if="!hasPassword" class="input" type="password" v-model="confirmPasswordInput" placeholder="再次输入密码" />
 				<button class="primary-btn" :loading="submitting" @click="submitAuth">
 					{{ hasPassword ? '进入账本' : '设置并进入' }}
 				</button>
 			</view>
 		</view>
 
-		<scroll-view v-else scroll-y class="money-page">
-			<view class="hero-card">
-				<view class="hero-row">
-					<view>
-						<view class="hero-date">{{ todayText }}</view>
-						<view class="hero-name">towYangLife</view>
+		<view v-else class="app-shell">
+			<scroll-view scroll-y class="content">
+				<view class="hero-card">
+					<view class="hero-row">
+						<view>
+							<view class="hero-date">{{ todayText }}</view>
+							<view class="hero-name">towYangLife</view>
+						</view>
+						<view class="hero-amount">{{ formatMoney(totalAssets, true) }}</view>
 					</view>
-					<view class="hero-amount">{{ formatMoney(totalAssets, true) }}</view>
-				</view>
-				<view class="hero-stats">
-					<view>
-						<text class="stat-label">可消费</text>
-						<text class="stat-value">{{ formatMoney(summary.totals.consumableBalance) }}</text>
+					<view class="hero-stats">
+						<view>
+							<text class="stat-label">可消费</text>
+							<text class="stat-value">{{ formatMoney(summary.totals.consumableBalance) }}</text>
+						</view>
+						<view>
+							<text class="stat-label">存款/不可消费</text>
+							<text class="stat-value">{{ formatMoney(summary.totals.protectedBalance) }}</text>
+						</view>
+						<view>
+							<text class="stat-label">总支出</text>
+							<text class="stat-value danger-text">{{ formatMoney(summary.totals.expense) }}</text>
+						</view>
 					</view>
-					<view>
-						<text class="stat-label">不可消费/存款</text>
-						<text class="stat-value">{{ formatMoney(summary.totals.protectedBalance) }}</text>
-					</view>
-					<view>
-						<text class="stat-label">本月净额</text>
-						<text class="stat-value">{{ formatMoney(monthNet, true) }}</text>
-					</view>
-				</view>
-			</view>
-
-			<view class="quick-actions">
-				<button @click="openRecordForm('income')">收入</button>
-				<button @click="openRecordForm('expense')">支出</button>
-				<button @click="openRecordForm('deposit')">存款</button>
-				<button @click="showCategoryForm = true">分类</button>
-			</view>
-
-			<view class="section">
-				<view class="section-title">统计</view>
-				<view class="summary-grid">
-					<view class="summary-card">
-						<text>总收入</text>
-						<strong>{{ formatMoney(summary.totals.income) }}</strong>
-					</view>
-					<view class="summary-card">
-						<text>总支出</text>
-						<strong class="danger">{{ formatMoney(summary.totals.expense) }}</strong>
-					</view>
-					<view class="summary-card">
-						<text>总存款</text>
-						<strong>{{ formatMoney(summary.totals.deposit) }}</strong>
-					</view>
-					<view class="summary-card">
-						<text>本月支出</text>
-						<strong class="danger">{{ formatMoney(summary.totals.monthExpense) }}</strong>
-					</view>
-				</view>
-				<view v-if="summary.expenseByCategory.length" class="rank-list">
-					<view v-for="item in summary.expenseByCategory" :key="item.category_id" class="rank-item">
-						<text>{{ item.category_name }}</text>
-						<text>{{ formatMoney(item.amount) }}</text>
-					</view>
-				</view>
-			</view>
-
-			<view class="section">
-				<view class="section-header">
-					<view class="section-title">记录</view>
-					<text class="refresh" @click="loadAll">刷新</text>
 				</view>
 
-				<view v-if="!records.length" class="empty">还没有记录，先记一笔吧。</view>
-				<view v-else class="timeline">
-					<view v-for="group in groupedRecords" :key="group.date" class="day-group">
-						<view class="day-title">{{ group.date }}</view>
-						<view v-for="record in group.records" :key="record._id" class="record-item">
-							<view class="record-dot">
-								<text>{{ recordIcon(record.type) }}</text>
-							</view>
+				<view v-if="activeTab === 'today'" class="panel">
+					<view class="section-header">
+						<view>
+							<view class="section-title">今日记录</view>
+							<view class="section-subtitle">{{ fullDateText }}</view>
+						</view>
+						<text class="refresh" @click="loadAll">刷新</text>
+					</view>
+					<view class="summary-strip">
+						<view>
+							<text>收入</text>
+							<strong>{{ formatMoney(todayTotals.income) }}</strong>
+						</view>
+						<view>
+							<text>支出</text>
+							<strong class="danger-text">{{ formatMoney(todayTotals.expense) }}</strong>
+						</view>
+						<view>
+							<text>存款</text>
+							<strong>{{ formatMoney(todayTotals.deposit) }}</strong>
+						</view>
+					</view>
+					<view v-if="!todayRecords.length" class="empty">今天还没有记录，点底部 + 记一笔。</view>
+					<view v-else class="timeline">
+						<view v-for="record in todayRecords" :key="record._id" class="record-item">
+							<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
 							<view class="record-main">
-								<view class="record-name">{{ record.category_name || recordTypeText(record.type) }}</view>
-								<view class="record-note">{{ record.note || recordTypeText(record.type) }}</view>
+								<view class="record-name">{{ record.note || recordTypeText(record.type) }}</view>
+								<view class="record-note">{{ recordTypeText(record.type) }}</view>
 							</view>
 							<view class="record-side">
-								<view :class="['record-amount', record.type === 'expense' ? 'danger' : '']">
+								<view :class="['record-amount', record.type === 'expense' ? 'danger-text' : '']">
 									{{ recordAmountText(record) }}
 								</view>
 								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 							</view>
 						</view>
+						<view class="the-end">The end</view>
 					</view>
-					<view class="the-end">The end</view>
-				</view>
-			</view>
-		</scroll-view>
-
-		<view v-if="showRecordForm" class="modal-mask">
-			<view class="modal">
-				<view class="modal-title">新增{{ recordTypeText(recordForm.type) }}</view>
-				<view class="type-tabs">
-					<text :class="{ active: recordForm.type === 'income' }" @click="switchRecordType('income')">收入</text>
-					<text :class="{ active: recordForm.type === 'expense' }" @click="switchRecordType('expense')">支出</text>
-					<text :class="{ active: recordForm.type === 'deposit' }" @click="switchRecordType('deposit')">存款</text>
 				</view>
 
-				<input class="input" type="digit" v-model="recordForm.amount" placeholder="金额，如 12.5" />
-
-				<picker
-					v-if="recordForm.type !== 'deposit'"
-					mode="selector"
-					:range="categoryPickerItems"
-					:value="selectedCategoryIndex"
-					@change="selectedCategoryIndex = Number($event.detail.value)"
-				>
-					<view class="picker">
-						{{ selectedCategoryName || '请选择分类' }}
+				<view v-else class="panel">
+					<view class="section-title">统计</view>
+					<view class="period-tabs">
+						<text
+							v-for="item in periodOptions"
+							:key="item.value"
+							:class="{ active: statPeriod === item.value }"
+							@click="changePeriod(item.value)"
+						>
+							{{ item.label }}
+						</text>
 					</view>
-				</picker>
+					<view class="period-label">{{ statRangeLabel }}</view>
+					<view class="summary-grid">
+						<view class="summary-card">
+							<text>周期收入</text>
+							<strong>{{ formatMoney(summary.totals.periodIncome) }}</strong>
+						</view>
+						<view class="summary-card">
+							<text>周期支出</text>
+							<strong class="danger-text">{{ formatMoney(summary.totals.periodExpense) }}</strong>
+						</view>
+						<view class="summary-card">
+							<text>周期存款</text>
+							<strong>{{ formatMoney(summary.totals.periodDeposit) }}</strong>
+						</view>
+						<view class="summary-card">
+							<text>周期净额</text>
+							<strong>{{ formatMoney(summary.totals.periodNet, true) }}</strong>
+						</view>
+					</view>
+					<view class="section-title small-title">周期明细</view>
+					<view v-if="!summary.periodRecords.length" class="empty">当前周期暂无记录。</view>
+					<view v-else class="timeline">
+						<view v-for="record in summary.periodRecords" :key="record._id" class="record-item">
+							<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+							<view class="record-main">
+								<view class="record-name">{{ record.note || recordTypeText(record.type) }}</view>
+								<view class="record-note">{{ recordTypeText(record.type) }}</view>
+							</view>
+							<view class="record-side">
+								<view :class="['record-amount', record.type === 'expense' ? 'danger-text' : '']">
+									{{ recordAmountText(record) }}
+								</view>
+								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
+							</view>
+						</view>
+						<view class="the-end">The end</view>
+					</view>
+				</view>
+			</scroll-view>
 
-				<picker mode="date" :value="recordForm.occurredDate" @change="recordForm.occurredDate = $event.detail.value">
-					<view class="picker">{{ recordForm.occurredDate }}</view>
-				</picker>
-				<input class="input" v-model="recordForm.note" placeholder="备注，可不填" />
-
-				<view class="modal-actions">
-					<button @click="showRecordForm = false">取消</button>
-					<button class="primary-btn" :loading="submitting" @click="submitRecord">保存</button>
+			<view class="bottom-tabbar">
+				<view :class="['tab-item', activeTab === 'today' ? 'active' : '']" @click="activeTab = 'today'">
+					<text class="tab-icon">今</text>
+					<text>今日记录</text>
+				</view>
+				<view class="tab-create" @click="openRecordForm">
+					<text>+</text>
+				</view>
+				<view :class="['tab-item', activeTab === 'stats' ? 'active' : '']" @click="activeTab = 'stats'">
+					<text class="tab-icon">统</text>
+					<text>统计</text>
 				</view>
 			</view>
 		</view>
 
-		<view v-if="showCategoryForm" class="modal-mask">
+		<view v-if="showRecordForm" class="modal-mask">
 			<view class="modal">
-				<view class="modal-title">收入归类</view>
-				<input class="input" v-model="categoryForm.name" placeholder="分类名称，如 工资/副业/教育基金" />
-				<view class="switch-row">
-					<view>
-						<view>允许被支出扣减</view>
-						<text>关闭后会计入不可消费资产</text>
-					</view>
-					<switch :checked="categoryForm.canConsume" @change="categoryForm.canConsume = $event.detail.value" />
+				<view class="modal-title">新建记录</view>
+				<view class="type-tabs">
+					<text :class="{ active: recordForm.type === 'income' }" @click="recordForm.type = 'income'">收入</text>
+					<text :class="{ active: recordForm.type === 'expense' }" @click="recordForm.type = 'expense'">支出</text>
+					<text :class="{ active: recordForm.type === 'deposit' }" @click="recordForm.type = 'deposit'">存款</text>
 				</view>
-				<button class="primary-btn" :loading="submitting" @click="submitCategory">新增分类</button>
-
-				<view class="category-list">
-					<view v-for="category in categories" :key="category._id" class="category-item">
-						<text>{{ category.name }}</text>
-						<text>{{ category.canConsume ? '可消费' : '不可消费' }}</text>
-					</view>
-				</view>
-
+				<input class="input" type="digit" v-model="recordForm.amount" placeholder="金额，如 12.5" />
+				<picker mode="date" :value="recordForm.occurredDate" @change="recordForm.occurredDate = $event.detail.value">
+					<view class="picker">{{ recordForm.occurredDate }}</view>
+				</picker>
+				<input class="input" v-model="recordForm.note" placeholder="备注，可不填" />
 				<view class="modal-actions">
-					<button @click="showCategoryForm = false">关闭</button>
+					<button @click="showRecordForm = false">取消</button>
+					<button class="primary-btn" :loading="submitting" @click="submitRecord">保存</button>
 				</view>
 			</view>
 		</view>
@@ -191,73 +186,46 @@ export default {
 			token: '',
 			passwordInput: '',
 			confirmPasswordInput: '',
-			categories: [],
+			activeTab: 'today',
+			statPeriod: 'month',
 			records: [],
-			summary: {
-				totals: {
-					income: 0,
-					expense: 0,
-					deposit: 0,
-					consumableBalance: 0,
-					protectedBalance: 0,
-					monthExpense: 0,
-					monthIncome: 0
-				},
-				expenseByCategory: []
-			},
+			summary: this.getEmptySummary(),
 			showRecordForm: false,
-			showCategoryForm: false,
-			selectedCategoryIndex: 0,
 			recordForm: {
-				type: 'income',
+				type: 'expense',
 				amount: '',
 				note: '',
 				occurredDate: ''
 			},
-			categoryForm: {
-				name: '',
-				canConsume: true
-			}
+			periodOptions: [
+				{ label: '日', value: 'day' },
+				{ label: '周', value: 'week' },
+				{ label: '月', value: 'month' },
+				{ label: '年', value: 'year' }
+			]
 		};
 	},
 	computed: {
 		todayText() {
+			return `${String(new Date().getDate()).padStart(2, '0')}日`;
+		},
+		fullDateText() {
 			const date = new Date();
-			return `${String(date.getDate()).padStart(2, '0')}日`;
+			return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 		},
 		totalAssets() {
 			return this.summary.totals.consumableBalance + this.summary.totals.protectedBalance;
 		},
-		monthNet() {
-			return this.summary.totals.monthIncome - this.summary.totals.monthExpense;
+		todayRecords() {
+			const range = this.getPeriodRange('day');
+			return this.records.filter((record) => record.occurred_at >= range.startAt && record.occurred_at < range.endAt);
 		},
-		availableCategories() {
-			if (this.recordForm.type === 'expense') {
-				return this.categories.filter((item) => item.canConsume);
-			}
-			return this.categories;
+		todayTotals() {
+			return this.sumRecords(this.todayRecords);
 		},
-		categoryPickerItems() {
-			return this.availableCategories.map((item) => `${item.name}${item.canConsume ? '（可消费）' : '（不可消费）'}`);
-		},
-		selectedCategory() {
-			return this.availableCategories[this.selectedCategoryIndex] || null;
-		},
-		selectedCategoryName() {
-			return this.selectedCategory ? this.categoryPickerItems[this.selectedCategoryIndex] : '';
-		},
-		groupedRecords() {
-			const groups = [];
-			const map = {};
-			this.records.forEach((record) => {
-				const key = this.dayLabel(record.occurred_at);
-				if (!map[key]) {
-					map[key] = { date: key, records: [] };
-					groups.push(map[key]);
-				}
-				map[key].records.push(record);
-			});
-			return groups;
+		statRangeLabel() {
+			const range = this.getPeriodRange(this.statPeriod);
+			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
 		}
 	},
 	onLoad() {
@@ -265,6 +233,24 @@ export default {
 		this.init();
 	},
 	methods: {
+		getEmptySummary() {
+			return {
+				totals: {
+					income: 0,
+					expense: 0,
+					deposit: 0,
+					consumableBalance: 0,
+					protectedBalance: 0,
+					periodIncome: 0,
+					periodExpense: 0,
+					periodDeposit: 0,
+					periodNet: 0,
+					monthExpense: 0,
+					monthIncome: 0
+				},
+				periodRecords: []
+			};
+		},
 		async callMoney(action, payload = {}, withToken = true) {
 			const res = await uniCloud.callFunction({
 				name: 'money-api',
@@ -326,38 +312,33 @@ export default {
 		},
 		async loadAll() {
 			try {
-				const [categoryData, recordData, summaryData] = await Promise.all([
-					this.callMoney('listCategories'),
-					this.callMoney('listRecords', { limit: 100 }),
-					this.callMoney('getSummary', this.currentMonthRange())
+				const range = this.getPeriodRange(this.statPeriod);
+				const [recordData, summaryData] = await Promise.all([
+					this.callMoney('listRecords', { limit: 200 }),
+					this.callMoney('getSummary', range)
 				]);
-				this.categories = categoryData.categories || [];
 				this.records = recordData.records || [];
-				this.summary = summaryData;
+				this.summary = summaryData || this.getEmptySummary();
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
 			}
 		},
-		openRecordForm(type) {
+		changePeriod(period) {
+			this.statPeriod = period;
+			this.loadAll();
+		},
+		openRecordForm() {
 			this.recordForm = {
-				type,
+				type: 'expense',
 				amount: '',
 				note: '',
 				occurredDate: this.formatDateInput(Date.now())
 			};
-			this.selectedCategoryIndex = 0;
 			this.showRecordForm = true;
-		},
-		switchRecordType(type) {
-			this.recordForm.type = type;
-			this.selectedCategoryIndex = 0;
 		},
 		async submitRecord() {
 			if (!this.recordForm.amount) {
 				return uni.showToast({ title: '请输入金额', icon: 'none' });
-			}
-			if (this.recordForm.type !== 'deposit' && !this.selectedCategory) {
-				return uni.showToast({ title: '请先新增可用分类', icon: 'none' });
 			}
 
 			this.submitting = true;
@@ -365,7 +346,6 @@ export default {
 				await this.callMoney('createRecord', {
 					type: this.recordForm.type,
 					amount: this.recordForm.amount,
-					categoryId: this.selectedCategory ? this.selectedCategory._id : '',
 					note: this.recordForm.note,
 					occurredAt: new Date(`${this.recordForm.occurredDate} 12:00:00`).getTime()
 				});
@@ -378,33 +358,33 @@ export default {
 				this.submitting = false;
 			}
 		},
-		async submitCategory() {
-			const name = this.categoryForm.name.trim();
-			if (!name) {
-				return uni.showToast({ title: '请输入分类名称', icon: 'none' });
+		getPeriodRange(period) {
+			const now = new Date();
+			let start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+			let end = new Date(start);
+			if (period === 'week') {
+				const day = start.getDay() || 7;
+				start = new Date(start.getFullYear(), start.getMonth(), start.getDate() - day + 1);
+				end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+			} else if (period === 'month') {
+				start = new Date(now.getFullYear(), now.getMonth(), 1);
+				end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+			} else if (period === 'year') {
+				start = new Date(now.getFullYear(), 0, 1);
+				end = new Date(now.getFullYear() + 1, 0, 1);
+			} else {
+				end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
 			}
-
-			this.submitting = true;
-			try {
-				await this.callMoney('createCategory', {
-					name,
-					canConsume: this.categoryForm.canConsume
-				});
-				this.categoryForm.name = '';
-				this.categoryForm.canConsume = true;
-				await this.loadAll();
-				uni.showToast({ title: '分类已新增', icon: 'success' });
-			} catch (e) {
-				uni.showToast({ title: e.message, icon: 'none' });
-			} finally {
-				this.submitting = false;
-			}
+			return { startAt: start.getTime(), endAt: end.getTime() };
 		},
-		currentMonthRange() {
-			const date = new Date();
-			const monthStart = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
-			const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime();
-			return { monthStart, monthEnd };
+		sumRecords(records) {
+			return records.reduce(
+				(sum, record) => {
+					sum[record.type] += Number(record.amount || 0);
+					return sum;
+				},
+				{ income: 0, expense: 0, deposit: 0 }
+			);
 		},
 		formatDateInput(timestamp) {
 			const date = new Date(timestamp);
@@ -413,9 +393,9 @@ export default {
 			const day = String(date.getDate()).padStart(2, '0');
 			return `${year}-${month}-${day}`;
 		},
-		dayLabel(timestamp) {
+		formatDateText(timestamp) {
 			const date = new Date(timestamp);
-			return `${String(date.getMonth() + 1).padStart(2, '0')}月${String(date.getDate()).padStart(2, '0')}日`;
+			return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
 		},
 		shortDate(timestamp) {
 			const date = new Date(timestamp);
@@ -427,22 +407,13 @@ export default {
 			return `${sign}${value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 		},
 		recordTypeText(type) {
-			return {
-				income: '收入',
-				expense: '支出',
-				deposit: '存款'
-			}[type] || '记录';
+			return { income: '收入', expense: '支出', deposit: '存款' }[type] || '记录';
 		},
 		recordIcon(type) {
-			return {
-				income: '入',
-				expense: '支',
-				deposit: '存'
-			}[type] || '记';
+			return { income: '入', expense: '支', deposit: '存' }[type] || '记';
 		},
 		recordAmountText(record) {
-			const prefix = record.type === 'expense' ? '-' : '+';
-			return `${prefix}${this.formatMoney(record.amount)}`;
+			return `${record.type === 'expense' ? '-' : '+'}${this.formatMoney(record.amount)}`;
 		}
 	}
 };
@@ -472,8 +443,8 @@ export default {
 }
 
 .auth-card,
-.modal,
-.section {
+.panel,
+.modal {
 	background: #ffffff;
 	border-radius: 28rpx;
 	box-shadow: 0 20rpx 60rpx rgba(16, 24, 40, 0.08);
@@ -497,9 +468,18 @@ export default {
 	margin-bottom: 16rpx;
 }
 
-.auth-desc {
+.auth-desc,
+.section-subtitle,
+.record-note,
+.record-time,
+.summary-card text,
+.summary-strip text,
+.period-label {
 	color: #667085;
-	font-size: 26rpx;
+	font-size: 24rpx;
+}
+
+.auth-desc {
 	line-height: 1.6;
 	margin-bottom: 32rpx;
 }
@@ -521,9 +501,13 @@ export default {
 	border-radius: 18rpx;
 }
 
-.money-page {
+.app-shell {
+	min-height: 100vh;
+}
+
+.content {
 	height: 100vh;
-	padding: 12rpx 12rpx 60rpx;
+	padding: 12rpx 12rpx 160rpx;
 	box-sizing: border-box;
 }
 
@@ -538,11 +522,9 @@ export default {
 .hero-stats,
 .section-header,
 .record-item,
-.rank-item,
-.category-item,
-.switch-row,
-.modal-actions,
-.quick-actions {
+.summary-strip,
+.bottom-tabbar,
+.modal-actions {
 	display: flex;
 	align-items: center;
 }
@@ -550,9 +532,7 @@ export default {
 .hero-row,
 .section-header,
 .record-item,
-.rank-item,
-.category-item,
-.switch-row {
+.summary-strip {
 	justify-content: space-between;
 }
 
@@ -598,29 +578,21 @@ export default {
 	font-weight: 700;
 }
 
-.quick-actions {
-	gap: 16rpx;
-	padding: 24rpx 4rpx;
-}
-
-.quick-actions button {
-	flex: 1;
-	margin: 0;
-	border-radius: 18rpx;
-	background: #ffffff;
-	font-size: 26rpx;
-}
-
-.section {
-	margin: 12rpx 4rpx 24rpx;
+.panel {
+	margin-top: 22rpx;
 	padding: 28rpx;
 	box-shadow: none;
 }
 
 .section-title {
-	font-size: 30rpx;
-	font-weight: 700;
-	margin-bottom: 20rpx;
+	font-size: 32rpx;
+	font-weight: 800;
+	margin-bottom: 18rpx;
+}
+
+.small-title {
+	margin-top: 28rpx;
+	font-size: 28rpx;
 }
 
 .refresh {
@@ -628,10 +600,30 @@ export default {
 	font-size: 24rpx;
 }
 
+.summary-strip {
+	gap: 16rpx;
+	margin: 24rpx 0;
+}
+
+.summary-strip view {
+	flex: 1;
+	padding: 22rpx;
+	border-radius: 18rpx;
+	background: #f7f7f7;
+}
+
+.summary-strip strong,
+.summary-card strong {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 30rpx;
+}
+
 .summary-grid {
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);
 	gap: 16rpx;
+	margin-top: 20rpx;
 }
 
 .summary-card {
@@ -640,47 +632,38 @@ export default {
 	background: #f7f7f7;
 }
 
-.summary-card text,
-.switch-row text,
-.record-note,
-.record-time {
+.period-tabs {
+	display: flex;
+	gap: 14rpx;
+	margin-bottom: 14rpx;
+}
+
+.period-tabs text {
+	flex: 1;
+	text-align: center;
+	padding: 16rpx 0;
+	border-radius: 999rpx;
+	background: #f2f4f7;
 	color: #667085;
-	font-size: 24rpx;
-}
-
-.summary-card strong {
-	display: block;
-	margin-top: 10rpx;
-	font-size: 30rpx;
-}
-
-.danger {
-	color: #c8171d;
-}
-
-.rank-list {
-	margin-top: 18rpx;
-}
-
-.rank-item,
-.category-item {
-	min-height: 68rpx;
-	border-bottom: 1px solid #f0f0f0;
 	font-size: 26rpx;
+}
+
+.period-tabs .active {
+	background: #282321;
+	color: #ffffff;
+}
+
+.danger-text {
+	color: #c8171d !important;
 }
 
 .timeline {
 	position: relative;
 }
 
-.day-title {
-	margin: 24rpx 0 16rpx 58rpx;
-	color: #667085;
-	font-size: 28rpx;
-}
-
 .record-item {
 	min-height: 116rpx;
+	border-bottom: 1px solid #f0f0f0;
 }
 
 .record-dot {
@@ -695,7 +678,6 @@ export default {
 	justify-content: center;
 	font-size: 22rpx;
 	font-weight: 700;
-	color: #101828;
 }
 
 .record-main {
@@ -717,9 +699,63 @@ export default {
 }
 
 .the-end {
-	margin: 18rpx 0 8rpx 84rpx;
+	margin: 22rpx 0 4rpx 92rpx;
 	color: #101828;
 	font-size: 24rpx;
+}
+
+.bottom-tabbar {
+	position: fixed;
+	left: 24rpx;
+	right: 24rpx;
+	bottom: 24rpx;
+	z-index: 10;
+	height: 112rpx;
+	padding: 0 26rpx;
+	border-radius: 36rpx;
+	background: #ffffff;
+	box-shadow: 0 16rpx 50rpx rgba(16, 24, 40, 0.16);
+	justify-content: space-between;
+	box-sizing: border-box;
+}
+
+.tab-item {
+	width: 180rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 6rpx;
+	color: #667085;
+	font-size: 22rpx;
+}
+
+.tab-item.active {
+	color: #282321;
+	font-weight: 700;
+}
+
+.tab-icon {
+	font-size: 28rpx;
+}
+
+.tab-create {
+	width: 100rpx;
+	height: 100rpx;
+	margin-top: -52rpx;
+	border-radius: 50%;
+	background: #282321;
+	color: #ffffff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 14rpx 40rpx rgba(40, 35, 33, 0.35);
+}
+
+.tab-create text {
+	font-size: 64rpx;
+	line-height: 1;
+	margin-top: -8rpx;
 }
 
 .modal-mask {
@@ -766,13 +802,6 @@ export default {
 	color: #ffffff;
 }
 
-.switch-row {
-	margin-bottom: 24rpx;
-	padding: 22rpx;
-	border-radius: 18rpx;
-	background: #f7f7f7;
-}
-
 .modal-actions {
 	gap: 16rpx;
 	margin-top: 18rpx;
@@ -782,11 +811,5 @@ export default {
 	flex: 1;
 	margin: 0;
 	border-radius: 18rpx;
-}
-
-.category-list {
-	max-height: 360rpx;
-	margin-top: 24rpx;
-	overflow: auto;
 }
 </style>

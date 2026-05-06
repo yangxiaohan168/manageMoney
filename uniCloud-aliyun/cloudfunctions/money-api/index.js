@@ -3,7 +3,6 @@
 const crypto = require('crypto');
 const db = uniCloud.database();
 const settingsCollection = db.collection('money-settings');
-const categoriesCollection = db.collection('money-categories');
 const recordsCollection = db.collection('money-records');
 
 const SETTINGS_KEY = 'default';
@@ -89,21 +88,6 @@ async function requireAuth(token) {
 	return setting;
 }
 
-async function seedDefaultCategories() {
-	const countRes = await categoriesCollection.limit(1).get();
-	if (countRes.data && countRes.data.length) return;
-
-	const createdAt = now();
-	const defaults = [
-		{ name: '工资', canConsume: true, enabled: true, sort: 10, created_at: createdAt, updated_at: createdAt },
-		{ name: '生活预算', canConsume: true, enabled: true, sort: 20, created_at: createdAt, updated_at: createdAt },
-		{ name: '存款', canConsume: false, enabled: true, sort: 30, created_at: createdAt, updated_at: createdAt }
-	];
-	for (const category of defaults) {
-		await categoriesCollection.add(category);
-	}
-}
-
 async function getAuthState() {
 	const setting = await getSetting();
 	return ok({ hasPassword: !!setting });
@@ -131,7 +115,6 @@ async function setupPassword(payload = {}) {
 		updated_at: createdAt
 	};
 	await settingsCollection.add(setting);
-	await seedDefaultCategories();
 
 	const token = encodeToken({ key: SETTINGS_KEY, exp: createdAt + TOKEN_MAX_AGE }, setting);
 	return ok({ token, expiresAt: createdAt + TOKEN_MAX_AGE });
@@ -147,7 +130,6 @@ async function login(payload = {}) {
 		return fail('密码不正确', 1002);
 	}
 
-	await seedDefaultCategories();
 	const createdAt = now();
 	const token = encodeToken({ key: SETTINGS_KEY, exp: createdAt + TOKEN_MAX_AGE }, setting);
 	return ok({ token, expiresAt: createdAt + TOKEN_MAX_AGE });
@@ -159,58 +141,8 @@ async function verifyToken(payload = {}) {
 	return ok({ valid: true, expiresAt: tokenPayload.exp });
 }
 
-async function listCategories() {
-	const res = await categoriesCollection
-		.where({ enabled: true })
-		.orderBy('sort', 'asc')
-		.orderBy('created_at', 'asc')
-		.get();
-	return ok({ categories: res.data || [] });
-}
-
-async function createCategory(payload = {}) {
-	const name = String(payload.name || '').trim();
-	if (!name) return fail('分类名称不能为空');
-
-	const createdAt = now();
-	const res = await categoriesCollection.add({
-		name,
-		canConsume: !!payload.canConsume,
-		enabled: true,
-		sort: Number(payload.sort || createdAt),
-		created_at: createdAt,
-		updated_at: createdAt
-	});
-	return ok({ id: res.id });
-}
-
-async function updateCategory(payload = {}) {
-	const id = payload.id;
-	if (!id) return fail('缺少分类 id');
-
-	const data = { updated_at: now() };
-	if (typeof payload.name === 'string' && payload.name.trim()) {
-		data.name = payload.name.trim();
-	}
-	if (typeof payload.canConsume === 'boolean') {
-		data.canConsume = payload.canConsume;
-	}
-	if (typeof payload.enabled === 'boolean') {
-		data.enabled = payload.enabled;
-	}
-
-	await categoriesCollection.doc(id).update(data);
-	return ok();
-}
-
-async function getCategory(id) {
-	if (!id) return null;
-	const res = await categoriesCollection.doc(id).get();
-	return res.data && res.data[0];
-}
-
-async function getCategoryBalance(categoryId) {
-	const res = await recordsCollection.where({ category_id: categoryId }).limit(1000).get();
+async function getConsumableBalance() {
+	const res = await recordsCollection.limit(1000).get();
 	return (res.data || []).reduce((sum, record) => {
 		if (record.type === 'income') return sum + Number(record.amount || 0);
 		if (record.type === 'expense') return sum - Number(record.amount || 0);
@@ -231,22 +163,10 @@ async function createRecord(payload = {}) {
 		return fail(e.message);
 	}
 
-	const categoryId = payload.categoryId || '';
-	let category = null;
-	if (type !== 'deposit') {
-		category = await getCategory(categoryId);
-		if (!category || category.enabled === false) {
-			return fail('请选择有效分类');
-		}
-	}
-
 	if (type === 'expense') {
-		if (!category.canConsume) {
-			return fail('该分类不可用于支出扣减');
-		}
-		const balance = await getCategoryBalance(categoryId);
+		const balance = await getConsumableBalance();
 		if (balance < amount) {
-			return fail('该分类可消费余额不足');
+			return fail('可消费余额不足');
 		}
 	}
 
@@ -254,9 +174,9 @@ async function createRecord(payload = {}) {
 	const record = {
 		type,
 		amount,
-		category_id: type === 'deposit' ? '' : categoryId,
-		category_name: type === 'deposit' ? '存款' : category.name,
-		category_can_consume: type === 'deposit' ? false : !!category.canConsume,
+		category_id: '',
+		category_name: payload.name || getRecordTypeName(type),
+		category_can_consume: type !== 'deposit',
 		note: String(payload.note || '').trim(),
 		occurred_at: Number(payload.occurredAt || createdAt),
 		created_at: createdAt,
@@ -266,76 +186,80 @@ async function createRecord(payload = {}) {
 	return ok({ id: res.id });
 }
 
+function getRecordTypeName(type) {
+	return {
+		income: '收入',
+		expense: '支出',
+		deposit: '存款'
+	}[type] || '记录';
+}
+
 async function listRecords(payload = {}) {
 	const limit = Math.min(Number(payload.limit || 100), 200);
+	const startAt = Number(payload.startAt || 0);
+	const endAt = Number(payload.endAt || 0);
 	const res = await recordsCollection
 		.orderBy('occurred_at', 'desc')
 		.orderBy('created_at', 'desc')
-		.limit(limit)
+		.limit(1000)
 		.get();
-	return ok({ records: res.data || [] });
+	const records = (res.data || [])
+		.filter((record) => (!startAt || record.occurred_at >= startAt) && (!endAt || record.occurred_at < endAt))
+		.slice(0, limit);
+	return ok({ records });
 }
 
 async function getSummary(payload = {}) {
 	const recordsRes = await recordsCollection.limit(1000).get();
-	const categoriesRes = await categoriesCollection.where({ enabled: true }).limit(1000).get();
 	const records = recordsRes.data || [];
-	const categoryMap = {};
-	(categoriesRes.data || []).forEach((category) => {
-		categoryMap[category._id] = category;
-	});
 
-	const monthStart = Number(payload.monthStart || 0);
-	const monthEnd = Number(payload.monthEnd || 0);
+	const startAt = Number(payload.startAt || payload.monthStart || 0);
+	const endAt = Number(payload.endAt || payload.monthEnd || 0);
 	const totals = {
 		income: 0,
 		expense: 0,
 		deposit: 0,
 		consumableBalance: 0,
 		protectedBalance: 0,
+		periodIncome: 0,
+		periodExpense: 0,
+		periodDeposit: 0,
+		periodNet: 0,
 		monthExpense: 0,
 		monthIncome: 0
 	};
-	const expenseByCategoryMap = {};
+	const periodRecords = [];
 
 	records.forEach((record) => {
 		const amount = Number(record.amount || 0);
-		const category = categoryMap[record.category_id];
-		const canConsume = record.type === 'deposit' ? false : !!(category ? category.canConsume : record.category_can_consume);
-		const inCurrentMonth = monthStart && monthEnd && record.occurred_at >= monthStart && record.occurred_at < monthEnd;
+		const inPeriod = startAt && endAt && record.occurred_at >= startAt && record.occurred_at < endAt;
 
 		if (record.type === 'income') {
 			totals.income += amount;
-			if (canConsume) {
-				totals.consumableBalance += amount;
-			} else {
-				totals.protectedBalance += amount;
-			}
-			if (inCurrentMonth) totals.monthIncome += amount;
+			totals.consumableBalance += amount;
+			if (inPeriod) totals.periodIncome += amount;
 		}
 		if (record.type === 'expense') {
 			totals.expense += amount;
 			totals.consumableBalance -= amount;
-			if (inCurrentMonth) {
-				totals.monthExpense += amount;
-				const key = record.category_id || 'unknown';
-				expenseByCategoryMap[key] = expenseByCategoryMap[key] || {
-					category_id: key,
-					category_name: record.category_name || '未分类',
-					amount: 0
-				};
-				expenseByCategoryMap[key].amount += amount;
-			}
+			if (inPeriod) totals.periodExpense += amount;
 		}
 		if (record.type === 'deposit') {
 			totals.deposit += amount;
 			totals.protectedBalance += amount;
+			if (inPeriod) totals.periodDeposit += amount;
+		}
+		if (inPeriod) {
+			periodRecords.push(record);
 		}
 	});
+	totals.monthIncome = totals.periodIncome;
+	totals.monthExpense = totals.periodExpense;
+	totals.periodNet = totals.periodIncome - totals.periodExpense + totals.periodDeposit;
 
 	return ok({
 		totals,
-		expenseByCategory: Object.values(expenseByCategoryMap).sort((a, b) => b.amount - a.amount)
+		periodRecords
 	});
 }
 
@@ -349,9 +273,6 @@ exports.main = async (event = {}) => {
 
 		await requireAuth(payload.token || token);
 
-		if (action === 'listCategories') return await listCategories(payload);
-		if (action === 'createCategory') return await createCategory(payload);
-		if (action === 'updateCategory') return await updateCategory(payload);
 		if (action === 'createRecord') return await createRecord(payload);
 		if (action === 'listRecords') return await listRecords(payload);
 		if (action === 'getSummary') return await getSummary(payload);
