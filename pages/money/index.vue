@@ -113,7 +113,7 @@
 					</view>
 				</view>
 
-				<view v-else class="panel">
+				<view v-else-if="activeTab === 'deposit'" class="panel">
 					<view class="section-header">
 						<view>
 							<view class="section-title">存款</view>
@@ -162,6 +162,89 @@
 					</view>
 					<view v-else-if="depositLoading" class="empty">加载中…</view>
 				</view>
+
+				<view v-else class="panel">
+					<view class="section-header">
+						<view>
+							<view class="section-title">人情收支</view>
+							<view class="section-subtitle">总计 {{ formatMoney(humanSummary.net, true) }}</view>
+						</view>
+						<view class="header-actions">
+							<text class="add-record-btn" @click="openHumanRecordForm()">新建人情</text>
+						</view>
+					</view>
+					<view class="period-tabs">
+						<text :class="{ active: humanSubTab === 'records' }" @click="humanSubTab = 'records'">收支记录</text>
+						<text :class="{ active: humanSubTab === 'friends' }" @click="humanSubTab = 'friends'">朋友管理</text>
+					</view>
+					<view v-if="humanSubTab === 'records'">
+						<view class="summary-grid">
+							<view class="summary-card">
+								<text>收礼总额</text>
+								<strong>{{ formatMoney(humanSummary.income) }}</strong>
+							</view>
+							<view class="summary-card">
+								<text>送礼总额</text>
+								<strong class="danger-text">{{ formatMoney(humanSummary.expense) }}</strong>
+							</view>
+						</view>
+						<view v-if="!humanRecords.length && !humanLoading" class="empty">还没有人情收支记录。</view>
+						<view v-else-if="humanRecords.length" class="timeline">
+							<uni-swipe-action>
+								<uni-swipe-action-item
+									v-for="record in humanRecords"
+									:key="record._id"
+									:right-options="recordActionOptions"
+									@click="onHumanRecordActionClick($event, record)"
+								>
+									<view class="record-item">
+										<view class="record-main">
+											<view class="record-name">{{ record.friend_name }}</view>
+											<view class="record-note">{{ record.type === 'human_income' ? '收礼' : '送礼' }}{{ record.note ? ' · ' + record.note : '' }}</view>
+										</view>
+										<view class="record-side">
+											<view :class="['record-amount', record.type === 'human_expense' ? 'danger-text' : '']">
+												{{ record.type === 'human_expense' ? '-' : '+' }}{{ formatMoney(record.amount) }}
+											</view>
+											<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
+										</view>
+									</view>
+								</uni-swipe-action-item>
+							</uni-swipe-action>
+							<view v-if="humanHasMore" class="load-more" @click="fetchHumanRecords(false)">
+								<text v-if="humanLoading">加载中…</text>
+								<text v-else>加载更多（{{ humanRecords.length }}/{{ humanTotal }}）</text>
+							</view>
+						</view>
+					</view>
+					<view v-else>
+						<view class="section-header">
+							<view class="section-subtitle">点击朋友可查看全部收支明细</view>
+							<text class="add-record-btn" @click="openFriendForm()">新增朋友</text>
+						</view>
+						<view v-if="!friends.length" class="empty">还没有朋友，先新增一个吧。</view>
+						<view v-else class="timeline">
+							<uni-swipe-action>
+								<uni-swipe-action-item
+									v-for="friend in friends"
+									:key="friend._id"
+									:right-options="recordActionOptions"
+									@click="onFriendActionClick($event, friend)"
+								>
+									<view class="record-item friend-item" @click="openFriendDetail(friend)">
+										<view class="record-main">
+											<view class="record-name">{{ friend.name }}</view>
+											<view class="record-note">{{ friend.note || '无备注' }}</view>
+										</view>
+										<view class="record-side">
+											<view class="record-time">查看详情</view>
+										</view>
+									</view>
+								</uni-swipe-action-item>
+							</uni-swipe-action>
+						</view>
+					</view>
+				</view>
 			</scroll-view>
 
 			<view class="bottom-tabbar">
@@ -176,6 +259,10 @@
 				<view :class="['tab-item', activeTab === 'deposit' ? 'active' : '']" @click="activeTab = 'deposit'">
 					<text class="tab-icon">存</text>
 					<text>存款</text>
+				</view>
+				<view :class="['tab-item', activeTab === 'human' ? 'active' : '']" @click="activeTab = 'human'">
+					<text class="tab-icon">情</text>
+					<text>人情</text>
 				</view>
 			</view>
 		</view>
@@ -200,6 +287,41 @@
 				<view class="modal-actions">
 					<button @click="showRecordForm = false">取消</button>
 					<button class="primary-btn" :loading="submitting" @click="submitRecord">保存</button>
+				</view>
+			</view>
+		</view>
+		<view v-if="showHumanRecordForm" class="modal-mask">
+			<view class="modal">
+				<view class="modal-title">{{ editingHumanRecordId ? '编辑人情记录' : '新建人情记录' }}</view>
+				<view class="type-tabs">
+					<text :class="{ active: humanRecordForm.type === 'human_income' }" @click="humanRecordForm.type = 'human_income'">收礼</text>
+					<text :class="{ active: humanRecordForm.type === 'human_expense' }" @click="humanRecordForm.type = 'human_expense'">送礼</text>
+				</view>
+				<picker :range="friendPickerNames" :value="humanFriendPickerIndex" @change="onSelectHumanFriend">
+					<view class="picker">{{ humanRecordForm.friendName || '请选择朋友' }}</view>
+				</picker>
+				<input class="input" type="digit" v-model="humanRecordForm.amount" placeholder="金额，如 200" />
+				<picker mode="date" :value="humanRecordForm.occurredDate" @change="humanRecordForm.occurredDate = $event.detail.value">
+					<view class="picker">{{ humanRecordForm.occurredDate }}</view>
+				</picker>
+				<picker mode="time" :value="humanRecordForm.occurredTime" @change="humanRecordForm.occurredTime = $event.detail.value">
+					<view class="picker">{{ humanRecordForm.occurredTime }}</view>
+				</picker>
+				<input class="input" v-model="humanRecordForm.note" placeholder="备注，可不填" />
+				<view class="modal-actions">
+					<button @click="showHumanRecordForm = false">取消</button>
+					<button class="primary-btn" :loading="submitting" @click="submitHumanRecord">保存</button>
+				</view>
+			</view>
+		</view>
+		<view v-if="showFriendForm" class="modal-mask">
+			<view class="modal">
+				<view class="modal-title">{{ editingFriendId ? '编辑朋友' : '新增朋友' }}</view>
+				<input class="input" v-model="friendForm.name" placeholder="朋友姓名" />
+				<input class="input" v-model="friendForm.note" placeholder="备注，可不填" />
+				<view class="modal-actions">
+					<button @click="showFriendForm = false">取消</button>
+					<button class="primary-btn" :loading="submitting" @click="submitFriend">保存</button>
 				</view>
 			</view>
 		</view>
@@ -233,13 +355,25 @@ export default {
 			depositTotal: 0,
 			depositHasMore: false,
 			depositLoading: false,
+			humanSubTab: 'records',
+			humanSummary: { income: 0, expense: 0, net: 0 },
+			humanRecords: [],
+			humanPage: 1,
+			humanTotal: 0,
+			humanHasMore: false,
+			humanLoading: false,
+			friends: [],
 			refreshing: false,
 			editingRecordId: '',
+			editingHumanRecordId: '',
+			editingFriendId: '',
 			recordActionOptions: [
 				{ text: '编辑', style: { backgroundColor: '#282321' } },
 				{ text: '删除', style: { backgroundColor: '#c8171d' } }
 			],
 			showRecordForm: false,
+			showHumanRecordForm: false,
+			showFriendForm: false,
 			recordForm: {
 				type: 'expense',
 				name: '',
@@ -247,6 +381,19 @@ export default {
 				note: '',
 				occurredDate: '',
 				occurredTime: ''
+			},
+			humanRecordForm: {
+				type: 'human_expense',
+				friendId: '',
+				friendName: '',
+				amount: '',
+				note: '',
+				occurredDate: '',
+				occurredTime: ''
+			},
+			friendForm: {
+				name: '',
+				note: ''
 			},
 			periodOptions: [
 				{ label: '日', value: 'day' },
@@ -272,11 +419,21 @@ export default {
 		statRangeLabel() {
 			const range = this.getPeriodRange(this.statPeriod);
 			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
+		},
+		friendPickerNames() {
+			return this.friends.map((item) => item.name);
+		},
+		humanFriendPickerIndex() {
+			if (!this.humanRecordForm.friendId) return 0;
+			const idx = this.friends.findIndex((item) => item._id === this.humanRecordForm.friendId);
+			return idx < 0 ? 0 : idx;
 		}
 	},
 	onLoad() {
 		this.recordForm.occurredDate = this.formatDateInput(Date.now());
 		this.recordForm.occurredTime = this.formatTimeInput(Date.now());
+		this.humanRecordForm.occurredDate = this.formatDateInput(Date.now());
+		this.humanRecordForm.occurredTime = this.formatTimeInput(Date.now());
 		this.init();
 	},
 	methods: {
@@ -370,9 +527,48 @@ export default {
 		async loadAll() {
 			try {
 				await this.loadSummary();
-				await Promise.all([this.fetchTodayRecords(true), this.fetchDepositRecords(true)]);
+				await Promise.all([
+					this.fetchTodayRecords(true),
+					this.fetchDepositRecords(true),
+					this.fetchHumanRecords(true),
+					this.loadFriends(),
+					this.loadHumanSummary()
+				]);
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
+			}
+		},
+		async loadHumanSummary() {
+			const data = await this.callMoney('getHumanSummary');
+			this.humanSummary = data.totals || { income: 0, expense: 0, net: 0 };
+		},
+		async loadFriends() {
+			const data = await this.callMoney('listFriends');
+			this.friends = data.friends || [];
+		},
+		async fetchHumanRecords(reset, friendId = '') {
+			if (this.humanLoading) return;
+			if (reset) {
+				this.humanPage = 1;
+				this.humanRecords = [];
+				this.humanHasMore = false;
+				this.humanTotal = 0;
+			} else if (!this.humanHasMore) {
+				return;
+			}
+			const page = reset ? 1 : this.humanPage + 1;
+			this.humanLoading = true;
+			try {
+				const data = await this.callMoney('listHumanRecords', { page, pageSize: 10, friendId });
+				const list = data.records || [];
+				this.humanRecords = reset ? list : this.humanRecords.concat(list);
+				this.humanPage = data.page;
+				this.humanTotal = data.total;
+				this.humanHasMore = !!data.hasMore;
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.humanLoading = false;
 			}
 		},
 		async fetchTodayRecords(reset) {
@@ -520,6 +716,16 @@ export default {
 				await this.removeRecord(record);
 			}
 		},
+		async onHumanRecordActionClick(e, record) {
+			const idx = Number(e && e.index);
+			if (idx === 0) return this.openHumanRecordForm(record);
+			if (idx === 1) return this.removeHumanRecord(record);
+		},
+		async onFriendActionClick(e, friend) {
+			const idx = Number(e && e.index);
+			if (idx === 0) return this.openFriendForm(friend);
+			if (idx === 1) return this.removeFriend(friend);
+		},
 		async removeRecord(record) {
 			const that = this;
 			uni.showModal({
@@ -535,6 +741,136 @@ export default {
 						uni.showToast({ title: e.message, icon: 'none' });
 					}
 				}
+			});
+		},
+		openHumanRecordForm(record = null) {
+			const nowTs = Date.now();
+			if (record && record._id) {
+				this.editingHumanRecordId = record._id;
+				this.humanRecordForm = {
+					type: record.type,
+					friendId: record.friend_id || '',
+					friendName: record.friend_name || '',
+					amount: ((Number(record.amount || 0)) / 100).toString(),
+					note: record.note || '',
+					occurredDate: this.formatDateInput(record.occurred_at || nowTs),
+					occurredTime: this.formatTimeInput(record.occurred_at || nowTs)
+				};
+			} else {
+				this.editingHumanRecordId = '';
+				this.humanRecordForm = {
+					type: 'human_expense',
+					friendId: '',
+					friendName: '',
+					amount: '',
+					note: '',
+					occurredDate: this.formatDateInput(nowTs),
+					occurredTime: this.formatTimeInput(nowTs)
+				};
+			}
+			this.showHumanRecordForm = true;
+		},
+		onSelectHumanFriend(e) {
+			const index = Number(e.detail.value || 0);
+			const friend = this.friends[index];
+			if (!friend) return;
+			this.humanRecordForm.friendId = friend._id;
+			this.humanRecordForm.friendName = friend.name;
+		},
+		async submitHumanRecord() {
+			if (!this.humanRecordForm.friendId) return uni.showToast({ title: '请选择朋友', icon: 'none' });
+			if (!this.humanRecordForm.amount) return uni.showToast({ title: '请输入金额', icon: 'none' });
+			this.submitting = true;
+			try {
+				const payload = {
+					friendId: this.humanRecordForm.friendId,
+					friendName: this.humanRecordForm.friendName,
+					type: this.humanRecordForm.type,
+					amount: this.humanRecordForm.amount,
+					note: this.humanRecordForm.note,
+					occurredAt: this.getTimestampByDateTime(this.humanRecordForm.occurredDate, this.humanRecordForm.occurredTime)
+				};
+				if (this.editingHumanRecordId) {
+					await this.callMoney('updateHumanRecord', { id: this.editingHumanRecordId, ...payload });
+				} else {
+					await this.callMoney('createHumanRecord', payload);
+				}
+				this.showHumanRecordForm = false;
+				this.editingHumanRecordId = '';
+				await Promise.all([this.fetchHumanRecords(true), this.loadHumanSummary()]);
+				uni.showToast({ title: '已保存', icon: 'success' });
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.submitting = false;
+			}
+		},
+		async removeHumanRecord(record) {
+			const that = this;
+			uni.showModal({
+				title: '删除记录',
+				content: `确认删除与「${record.friend_name || ''}」的这条记录吗？`,
+				success: async (res) => {
+					if (!res.confirm) return;
+					try {
+						await that.callMoney('deleteHumanRecord', { id: record._id });
+						await Promise.all([that.fetchHumanRecords(true), that.loadHumanSummary()]);
+						uni.showToast({ title: '已删除', icon: 'success' });
+					} catch (e) {
+						uni.showToast({ title: e.message, icon: 'none' });
+					}
+				}
+			});
+		},
+		openFriendForm(friend = null) {
+			if (friend && friend._id) {
+				this.editingFriendId = friend._id;
+				this.friendForm = { name: friend.name || '', note: friend.note || '' };
+			} else {
+				this.editingFriendId = '';
+				this.friendForm = { name: '', note: '' };
+			}
+			this.showFriendForm = true;
+		},
+		async submitFriend() {
+			if (!this.friendForm.name.trim()) return uni.showToast({ title: '请输入朋友名称', icon: 'none' });
+			this.submitting = true;
+			try {
+				await this.callMoney('upsertFriend', {
+					id: this.editingFriendId,
+					name: this.friendForm.name,
+					note: this.friendForm.note
+				});
+				this.showFriendForm = false;
+				this.editingFriendId = '';
+				await this.loadFriends();
+				uni.showToast({ title: '已保存', icon: 'success' });
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.submitting = false;
+			}
+		},
+		async removeFriend(friend) {
+			const that = this;
+			uni.showModal({
+				title: '删除朋友',
+				content: `确认删除朋友「${friend.name}」吗？`,
+				success: async (res) => {
+					if (!res.confirm) return;
+					try {
+						await that.callMoney('deleteFriend', { id: friend._id });
+						await that.loadFriends();
+						uni.showToast({ title: '已删除', icon: 'success' });
+					} catch (e) {
+						uni.showToast({ title: e.message, icon: 'none' });
+					}
+				}
+			});
+		},
+		openFriendDetail(friend) {
+			uni.navigateTo({
+				url: `/pages/money/friend?friendId=${encodeURIComponent(friend._id)}&friendName=${encodeURIComponent(friend.name)}`
 			});
 		},
 		async handleRefresh() {
@@ -587,6 +923,16 @@ export default {
 			const min = Number.isFinite(minute) ? minute : new Date().getMinutes();
 			const t = new Date(year, month - 1, day, h, min, 0, 0).getTime();
 			return Number.isFinite(t) ? t : Date.now();
+		},
+		getTimestampByDateTime(dateStr, timeStr) {
+			const d = dateStr || this.formatDateInput(Date.now());
+			const t = timeStr || this.formatTimeInput(Date.now());
+			const [year, month, day] = d.split('-').map(Number);
+			const [hour, minute] = t.split(':').map(Number);
+			const h = Number.isFinite(hour) ? hour : new Date().getHours();
+			const min = Number.isFinite(minute) ? minute : new Date().getMinutes();
+			const ts = new Date(year, month - 1, day, h, min, 0, 0).getTime();
+			return Number.isFinite(ts) ? ts : Date.now();
 		},
 		formatDateText(timestamp) {
 			const date = new Date(timestamp);
@@ -864,6 +1210,10 @@ export default {
 	border-bottom: 1px solid #f0f0f0;
 }
 
+.friend-item {
+	padding-left: 12rpx;
+}
+
 .record-node {
 	position: relative;
 	width: 76rpx;
@@ -940,7 +1290,7 @@ export default {
 }
 
 .tab-item {
-	width: 180rpx;
+	flex: 1;
 	display: flex;
 	flex-direction: column;
 	align-items: center;

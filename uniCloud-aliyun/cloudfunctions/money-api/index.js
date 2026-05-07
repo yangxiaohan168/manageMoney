@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const db = uniCloud.database();
 const settingsCollection = db.collection('money-settings');
 const recordsCollection = db.collection('money-records');
+const humanRecordsCollection = db.collection('money-human-records');
+const friendsCollection = db.collection('money-friends');
 
 const SETTINGS_KEY = 'default';
 const TOKEN_MAX_AGE = 1000 * 60 * 60 * 24 * 30;
@@ -211,6 +213,132 @@ async function deleteRecord(payload = {}) {
 	return ok({ id });
 }
 
+async function listFriends() {
+	const res = await friendsCollection.orderBy('updated_at', 'desc').orderBy('created_at', 'desc').limit(500).get();
+	return ok({ friends: res.data || [] });
+}
+
+async function upsertFriend(payload = {}) {
+	const id = String(payload.id || '').trim();
+	const name = String(payload.name || '').trim();
+	if (!name) return fail('请输入朋友名称');
+	const note = String(payload.note || '').trim();
+	const ts = now();
+	if (id) {
+		await friendsCollection.doc(id).update({ name, note, updated_at: ts });
+		return ok({ id });
+	}
+	const exists = await friendsCollection.where({ name }).limit(1).get();
+	if (exists.data && exists.data[0]) return fail('朋友名称已存在');
+	const res = await friendsCollection.add({ name, note, created_at: ts, updated_at: ts });
+	return ok({ id: res.id });
+}
+
+async function deleteFriend(payload = {}) {
+	const id = String(payload.id || '').trim();
+	if (!id) return fail('朋友ID不能为空');
+	await friendsCollection.doc(id).remove();
+	return ok({ id });
+}
+
+async function createHumanRecord(payload = {}) {
+	const friendId = String(payload.friendId || '').trim();
+	const friendName = String(payload.friendName || '').trim();
+	const type = payload.type;
+	if (!friendId || !friendName) return fail('请选择朋友');
+	if (!['human_income', 'human_expense'].includes(type)) return fail('记录类型不正确');
+	let amount = 0;
+	try {
+		amount = normalizeAmountToCents(payload.amount);
+	} catch (e) {
+		return fail(e.message);
+	}
+	const ts = now();
+	const record = {
+		friend_id: friendId,
+		friend_name: friendName,
+		type,
+		amount,
+		note: String(payload.note || '').trim(),
+		occurred_at: Number(payload.occurredAt || ts),
+		created_at: ts,
+		updated_at: ts
+	};
+	const res = await humanRecordsCollection.add(record);
+	return ok({ id: res.id });
+}
+
+async function updateHumanRecord(payload = {}) {
+	const id = String(payload.id || '').trim();
+	if (!id) return fail('记录ID不能为空');
+	const friendId = String(payload.friendId || '').trim();
+	const friendName = String(payload.friendName || '').trim();
+	const type = payload.type;
+	if (!friendId || !friendName) return fail('请选择朋友');
+	if (!['human_income', 'human_expense'].includes(type)) return fail('记录类型不正确');
+	let amount = 0;
+	try {
+		amount = normalizeAmountToCents(payload.amount);
+	} catch (e) {
+		return fail(e.message);
+	}
+	const occurredAt = Number(payload.occurredAt || 0);
+	const updateData = {
+		friend_id: friendId,
+		friend_name: friendName,
+		type,
+		amount,
+		note: String(payload.note || '').trim(),
+		updated_at: now()
+	};
+	if (Number.isFinite(occurredAt) && occurredAt > 0) updateData.occurred_at = occurredAt;
+	await humanRecordsCollection.doc(id).update(updateData);
+	return ok({ id });
+}
+
+async function deleteHumanRecord(payload = {}) {
+	const id = String(payload.id || '').trim();
+	if (!id) return fail('记录ID不能为空');
+	await humanRecordsCollection.doc(id).remove();
+	return ok({ id });
+}
+
+async function listHumanRecords(payload = {}) {
+	const pageSize = Math.min(Math.max(Number(payload.pageSize) || 10, 1), 50);
+	const page = Math.max(Number(payload.page) || 1, 1);
+	const skip = (page - 1) * pageSize;
+	const friendId = String(payload.friendId || '').trim();
+	const cond = {};
+	if (friendId) cond.friend_id = friendId;
+	const condKeys = Object.keys(cond);
+	const base = condKeys.length ? humanRecordsCollection.where(cond) : humanRecordsCollection;
+	const countRes = await base.count();
+	const total = countRes.total || 0;
+	const res = await (condKeys.length ? humanRecordsCollection.where(cond) : humanRecordsCollection)
+		.orderBy('occurred_at', 'desc')
+		.orderBy('created_at', 'desc')
+		.skip(skip)
+		.limit(pageSize)
+		.get();
+	const records = res.data || [];
+	return ok({ records, total, page, pageSize, hasMore: skip + records.length < total });
+}
+
+async function getHumanSummary() {
+	const $ = db.command.aggregate;
+	const sumType = (type) =>
+		humanRecordsCollection
+			.aggregate()
+			.match({ type })
+			.group({ _id: null, sum: $.sum('$amount') })
+			.end();
+	const [inRes, outRes] = await Promise.all([sumType('human_income'), sumType('human_expense')]);
+	const pick = (res) => ((res.data && res.data[0]) ? Number(res.data[0].sum || 0) : 0);
+	const income = pick(inRes);
+	const expense = pick(outRes);
+	return ok({ totals: { income, expense, net: income - expense } });
+}
+
 async function listRecords(payload = {}) {
 	const pageSize = Math.min(Math.max(Number(payload.pageSize) || 10, 1), 50);
 	const page = Math.max(Number(payload.page) || 1, 1);
@@ -331,6 +459,14 @@ exports.main = async (event = {}) => {
 		if (action === 'deleteRecord') return await deleteRecord(payload);
 		if (action === 'listRecords') return await listRecords(payload);
 		if (action === 'getSummary') return await getSummary(payload);
+		if (action === 'listFriends') return await listFriends();
+		if (action === 'upsertFriend') return await upsertFriend(payload);
+		if (action === 'deleteFriend') return await deleteFriend(payload);
+		if (action === 'createHumanRecord') return await createHumanRecord(payload);
+		if (action === 'updateHumanRecord') return await updateHumanRecord(payload);
+		if (action === 'deleteHumanRecord') return await deleteHumanRecord(payload);
+		if (action === 'listHumanRecords') return await listHumanRecords(payload);
+		if (action === 'getHumanSummary') return await getHumanSummary();
 
 		return fail('未知操作');
 	} catch (e) {

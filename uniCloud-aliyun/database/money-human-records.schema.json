@@ -1,0 +1,28 @@
+﻿{
+  "bsonType": "object",
+  "required": ["friend_id", "friend_name", "type", "amount", "occurred_at", "created_at"],
+  "permission": {
+    "read": "false",
+    "create": "false",
+    "update": "false",
+    "delete": "false"
+  },
+  "properties": {
+    "_id": {"description": "ID，系统自动生成"},
+    "friend_id": {"bsonType": "string", "title": "朋友ID"},
+    "friend_name": {"bsonType": "string", "title": "朋友名称"},
+    "type": {
+      "bsonType": "string",
+      "title": "人情类型",
+      "enum": [
+        {"text": "收礼", "value": "human_income"},
+        {"text": "送礼", "value": "human_expense"}
+      ]
+    },
+    "amount": {"bsonType": "int", "title": "金额，单位分", "minimum": 1},
+    "note": {"bsonType": "string", "title": "备注", "maxLength": 100},
+    "occurred_at": {"bsonType": "timestamp", "title": "发生时间"},
+    "created_at": {"bsonType": "timestamp", "description": "创建时间"},
+    "updated_at": {"bsonType": "timestamp", "description": "更新时间"}
+  }
+}
