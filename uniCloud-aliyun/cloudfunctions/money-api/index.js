@@ -172,6 +172,45 @@ async function createRecord(payload = {}) {
 	return ok({ id: res.id });
 }
 
+async function updateRecord(payload = {}) {
+	const id = String(payload.id || '').trim();
+	if (!id) return fail('记录ID不能为空');
+	const type = payload.type;
+	if (!['income', 'expense', 'deposit'].includes(type)) {
+		return fail('记录类型不正确');
+	}
+	const name = String(payload.name || '').trim();
+	if (!name) return fail('请输入记录名');
+
+	let amount = 0;
+	try {
+		amount = normalizeAmountToCents(payload.amount);
+	} catch (e) {
+		return fail(e.message);
+	}
+
+	const occurredAt = Number(payload.occurredAt || 0);
+	const updateData = {
+		type,
+		name,
+		amount,
+		note: String(payload.note || '').trim(),
+		updated_at: now()
+	};
+	if (Number.isFinite(occurredAt) && occurredAt > 0) {
+		updateData.occurred_at = occurredAt;
+	}
+	await recordsCollection.doc(id).update(updateData);
+	return ok({ id });
+}
+
+async function deleteRecord(payload = {}) {
+	const id = String(payload.id || '').trim();
+	if (!id) return fail('记录ID不能为空');
+	await recordsCollection.doc(id).remove();
+	return ok({ id });
+}
+
 async function listRecords(payload = {}) {
 	const pageSize = Math.min(Math.max(Number(payload.pageSize) || 10, 1), 50);
 	const page = Math.max(Number(payload.page) || 1, 1);
@@ -273,7 +312,7 @@ async function getSummary(payload = {}) {
 		totals.periodDeposit = pick(depRes);
 	}
 
-	totals.periodNet = totals.periodIncome - totals.periodExpense + totals.periodDeposit;
+	totals.periodNet = totals.periodIncome - totals.periodExpense;
 	return ok({ totals });
 }
 
@@ -288,6 +327,8 @@ exports.main = async (event = {}) => {
 		await requireAuth(payload.token || token);
 
 		if (action === 'createRecord') return await createRecord(payload);
+		if (action === 'updateRecord') return await updateRecord(payload);
+		if (action === 'deleteRecord') return await deleteRecord(payload);
 		if (action === 'listRecords') return await listRecords(payload);
 		if (action === 'getSummary') return await getSummary(payload);
 

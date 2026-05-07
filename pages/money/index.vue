@@ -18,7 +18,13 @@
 		</view>
 
 		<view v-else class="app-shell">
-			<scroll-view scroll-y class="content">
+			<scroll-view
+				scroll-y
+				class="content"
+				:refresher-enabled="true"
+				:refresher-triggered="refreshing"
+				@refresherrefresh="handleRefresh"
+			>
 				<view v-if="activeTab === 'today'" class="hero-card">
 					<view class="hero-date">{{ todayText }}</view>
 					<view class="hero-profit-label">今日收支</view>
@@ -40,7 +46,14 @@
 					</view>
 					<view v-if="!todayList.length && !todayLoading" class="empty">今天还没有记录，点“+ 新建”记一笔。</view>
 					<view v-else-if="todayList.length" class="timeline">
-						<view v-for="(record, index) in todayList" :key="record._id" class="record-item">
+						<uni-swipe-action>
+							<uni-swipe-action-item
+								v-for="(record, index) in todayList"
+								:key="record._id"
+								:right-options="recordActionOptions"
+								@click="onRecordActionClick($event, record)"
+							>
+								<view class="record-item">
 							<view class="record-node">
 								<view v-if="index !== 0" class="node-line top-line"></view>
 								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
@@ -56,7 +69,9 @@
 								</view>
 								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 							</view>
-						</view>
+								</view>
+							</uni-swipe-action-item>
+						</uni-swipe-action>
 						<view v-if="todayHasMore" class="load-more" @click="fetchTodayRecords(false)">
 							<text v-if="todayLoading">加载中…</text>
 							<text v-else>加载更多（{{ todayList.length }}/{{ todayTotal }}）</text>
@@ -116,7 +131,14 @@
 					</view>
 					<view v-if="!depositList.length && !depositLoading" class="empty">还没有存款记录。</view>
 					<view v-else-if="depositList.length" class="timeline">
-						<view v-for="(record, index) in depositList" :key="record._id" class="record-item">
+						<uni-swipe-action>
+							<uni-swipe-action-item
+								v-for="(record, index) in depositList"
+								:key="record._id"
+								:right-options="recordActionOptions"
+								@click="onRecordActionClick($event, record)"
+							>
+								<view class="record-item">
 							<view class="record-node">
 								<view v-if="index !== 0" class="node-line top-line"></view>
 								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
@@ -130,7 +152,9 @@
 								<view class="record-amount">{{ recordAmountText(record) }}</view>
 								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 							</view>
-						</view>
+								</view>
+							</uni-swipe-action-item>
+						</uni-swipe-action>
 						<view v-if="depositHasMore" class="load-more" @click="fetchDepositRecords(false)">
 							<text v-if="depositLoading">加载中…</text>
 							<text v-else>加载更多（{{ depositList.length }}/{{ depositTotal }}）</text>
@@ -158,7 +182,7 @@
 
 		<view v-if="showRecordForm" class="modal-mask">
 			<view class="modal">
-				<view class="modal-title">新建记录</view>
+				<view class="modal-title">{{ editingRecordId ? '编辑记录' : '新建记录' }}</view>
 				<view v-if="recordForm.type !== 'deposit'" class="type-tabs">
 					<text :class="{ active: recordForm.type === 'income' }" @click="recordForm.type = 'income'">收入</text>
 					<text :class="{ active: recordForm.type === 'expense' }" @click="recordForm.type = 'expense'">支出</text>
@@ -209,6 +233,12 @@ export default {
 			depositTotal: 0,
 			depositHasMore: false,
 			depositLoading: false,
+			refreshing: false,
+			editingRecordId: '',
+			recordActionOptions: [
+				{ text: '编辑', style: { backgroundColor: '#282321' } },
+				{ text: '删除', style: { backgroundColor: '#c8171d' } }
+			],
 			showRecordForm: false,
 			recordForm: {
 				type: 'expense',
@@ -305,6 +335,13 @@ export default {
 
 			this.submitting = true;
 			try {
+				if (!this.hasPassword) {
+					const authState = await this.callMoney('getAuthState', {}, false);
+					this.hasPassword = !!authState.hasPassword;
+					if (!this.hasPassword && password !== this.confirmPasswordInput.trim()) {
+						return uni.showToast({ title: '两次密码不一致', icon: 'none' });
+					}
+				}
 				const action = this.hasPassword ? 'login' : 'setupPassword';
 				const data = await this.callMoney(action, { password }, false);
 				this.token = data.token;
@@ -415,7 +452,21 @@ export default {
 				uni.showToast({ title: e.message, icon: 'none' });
 			}
 		},
-		openRecordForm(type = 'expense') {
+		openRecordForm(type = 'expense', record = null) {
+			if (record && record._id) {
+				this.editingRecordId = record._id;
+				this.recordForm = {
+					type: record.type,
+					name: record.name || '',
+					amount: ((Number(record.amount || 0)) / 100).toString(),
+					note: record.note || '',
+					occurredDate: this.formatDateInput(record.occurred_at || Date.now()),
+					occurredTime: this.formatTimeInput(record.occurred_at || Date.now())
+				};
+				this.showRecordForm = true;
+				return;
+			}
+			this.editingRecordId = '';
 			this.recordForm = {
 				type,
 				name: '',
@@ -436,20 +487,63 @@ export default {
 
 			this.submitting = true;
 			try {
-				await this.callMoney('createRecord', {
+				const isEdit = !!this.editingRecordId;
+				const payload = {
 					type: this.recordForm.type,
 					name: this.recordForm.name,
 					amount: this.recordForm.amount,
 					note: this.recordForm.note,
 					occurredAt: this.getRecordTimestamp()
-				});
+				};
+				if (this.editingRecordId) {
+					await this.callMoney('updateRecord', { id: this.editingRecordId, ...payload });
+				} else {
+					await this.callMoney('createRecord', payload);
+				}
 				this.showRecordForm = false;
+				this.editingRecordId = '';
 				await this.loadAll();
-				uni.showToast({ title: '已保存', icon: 'success' });
+				uni.showToast({ title: isEdit ? '已更新' : '已保存', icon: 'success' });
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
 			} finally {
 				this.submitting = false;
+			}
+		},
+		async onRecordActionClick(e, record) {
+			const idx = Number(e && e.index);
+			if (idx === 0) {
+				this.openRecordForm(record.type, record);
+				return;
+			}
+			if (idx === 1) {
+				await this.removeRecord(record);
+			}
+		},
+		async removeRecord(record) {
+			const that = this;
+			uni.showModal({
+				title: '删除记录',
+				content: `确认删除「${this.recordDisplayName(record)}」吗？`,
+				success: async (res) => {
+					if (!res.confirm) return;
+					try {
+						await that.callMoney('deleteRecord', { id: record._id });
+						await that.loadAll();
+						uni.showToast({ title: '已删除', icon: 'success' });
+					} catch (e) {
+						uni.showToast({ title: e.message, icon: 'none' });
+					}
+				}
+			});
+		},
+		async handleRefresh() {
+			if (this.refreshing) return;
+			this.refreshing = true;
+			try {
+				await this.loadAll();
+			} finally {
+				this.refreshing = false;
 			}
 		},
 		getPeriodRange(period) {
