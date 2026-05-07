@@ -1,48 +1,76 @@
 # 一起存钱
 
-一个基于 **uni-app（Vue 3）+ uniCloud（阿里云）** 的极简记账应用，支持收入、支出、存款管理。
+一个基于 **uni-app（Vue 3）+ uniCloud（阿里云）** 的轻量记账应用，支持收入、支出、存款三类记录。
 
-## 当前功能
+## 功能一览
 
-- 密码仅首次设置一次，后续只需登录校验。
-- 今日记录与存款记录均支持分页（每页 10 条）与“加载更多”。
-- 记录卡片支持左滑操作：**编辑**、**删除**。
-- 支持下拉刷新（刷新统计与列表数据）。
-- 统计支持日 / 周 / 月 / 年。
-- 周期净额计算规则：`收入 - 支出`（不计入存款）。
+- 首次使用设置密码，后续直接输入密码登录。
+- 今日记录：展示当天收入/支出，支持新增、分页加载。
+- 存款记录：单独展示存款，支持新增、分页加载。
+- 记录支持左滑操作：编辑、删除。
+- 支持下拉刷新，快速同步最新数据。
+- 统计支持：日 / 周 / 月 / 年。
+- 周期净额：仅按 `收入 - 支出` 计算（不包含存款）。
 
-## 项目结构
+## 从 0 到 1 部署指南
 
-- 前端页面：`pages/money/index.vue`
+### 1. 准备环境
+
+1. 安装 [HBuilderX](https://www.dcloud.io/hbuilderx.html)。
+2. 注册并登录 DCloud 账号（HBuilderX 内登录）。
+3. 准备一个 uniCloud 阿里云服务空间（新建或已有均可）。
+
+### 2. 打开项目并绑定云空间
+
+1. 用 HBuilderX 打开本项目目录。
+2. 在项目中为 `uniCloud-aliyun` 绑定目标云服务空间。
+
+### 3. 初始化数据库
+
+在 HBuilderX 的 uniCloud 数据库管理里，上传以下 Schema：
+
+- `uniCloud-aliyun/database/money-settings.schema.json`
+- `uniCloud-aliyun/database/money-records.schema.json`
+
+### 4. 部署云函数
+
+部署云函数目录：
+
+- `uniCloud-aliyun/cloudfunctions/money-api`
+
+说明：后续如果你修改了云函数代码，需要重新上传/部署一次。
+
+### 5. 配置页面入口
+
+本项目首页为：
+
+- `pages/money/index`
+
+`pages.json` 已配置好该入口，通常不需要再改。
+
+### 6. 启动运行
+
+可选择以下任一方式运行：
+
+- 运行到 H5（浏览器）
+- 运行到 App（真机/模拟器）
+
+首次进入应用时设置密码，之后即可开始记账。
+
+## 常见部署排查
+
+- 页面空白或接口报错：确认云函数 `money-api` 已成功部署到当前绑定空间。
+- 登录失败：确认数据库里 `money-settings` 表结构已正确上传。
+- 记录无法读写：确认 `money-records`、`money-settings` 已在同一云空间创建。
+
+## 目录说明（精简）
+
+- 页面：`pages/money/index.vue`
 - 云函数：`uniCloud-aliyun/cloudfunctions/money-api/index.js`
-- 数据表 Schema：
-  - `uniCloud-aliyun/database/money-settings.schema.json`
-  - `uniCloud-aliyun/database/money-records.schema.json`
-- App 升级弹窗页：`uni_modules/uni-upgrade-center-app/pages/upgrade-popup`
-
-工程已移除大部分模板/demo 页面、demo 云函数与 demo 数据库文件，仅保留当前业务所需内容。
-
-## 云函数 action（money-api）
-
-- `getAuthState`：查询是否已设置密码
-- `setupPassword`：首次设置密码
-- `login`：密码登录
-- `verifyToken`：校验 token
-- `createRecord`：新增记录
-- `updateRecord`：编辑记录
-- `deleteRecord`：删除记录
-- `listRecords`：分页查询记录（支持 `page/pageSize/types/startAt/endAt`）
-- `getSummary`：汇总统计（全量汇总，不做 1000 条限制）
-
-## 本地运行与部署
-
-1. 用 [HBuilderX](https://www.dcloud.io/hbuilderx.html) 打开项目并绑定 uniCloud 阿里云空间。
-2. 上传数据库 Schema：`money-settings`、`money-records`。
-3. 部署云函数：`money-api`（每次修改后记得重新上传）。
-4. 运行到 H5 或 App，入口页面为 `pages/money/index`。
+- 数据库：`uniCloud-aliyun/database/*.schema.json`
 
 ## Git 忽略
 
-已在 `.gitignore` 中忽略：
+已忽略构建目录：
 
 - `unpackage/`
