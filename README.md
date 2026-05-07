@@ -52,40 +52,4 @@
 
 说明：后续如果你修改了云函数代码，需要重新上传/部署一次。
 
-### 5. 配置页面入口
 
-本项目首页为：
-
-- `pages/money/index`
-- `pages/money/friend`（朋友收支详情子页面）
-
-`pages.json` 已配置好该入口，通常不需要再改。
-
-### 6. 启动运行
-
-可选择以下任一方式运行：
-
-- 运行到 H5（浏览器）
-- 运行到 App（真机/模拟器）
-
-首次进入应用时设置密码，之后即可开始记账。
-
-## 常见部署排查
-
-- 页面空白或接口报错：确认云函数 `money-api` 已成功部署到当前绑定空间。
-- 登录失败：确认数据库里 `money-settings` 表结构已正确上传。
-- 普通记录无法读写：确认 `money-records`、`money-settings` 已在同一云空间创建。
-- 人情或朋友功能报错：确认 `money-friends`、`money-human-records` 已创建，并且 `money-api` 已重新部署。
-
-## 目录说明（精简）
-
-- 页面：`pages/money/index.vue`
-- 子页面：`pages/money/friend.vue`
-- 云函数：`uniCloud-aliyun/cloudfunctions/money-api/index.js`
-- 数据库：`uniCloud-aliyun/database/*.schema.json`
-
-## Git 忽略
-
-已忽略构建目录：
-
-- `unpackage/`
