@@ -37,7 +37,7 @@
 
 ### 3. 初始化数据库
 
-在 HBuilderX 的 uniCloud 数据库管理里，上传以下 Schema：
+在 HBuilderX 的 uniCloud 数据库管理里，右击，点击“上传部署”以下 Schema：
 
 - `uniCloud-aliyun/database/money-settings.schema.json`
 - `uniCloud-aliyun/database/money-records.schema.json`
@@ -51,5 +51,19 @@
 - `uniCloud-aliyun/cloudfunctions/money-api`
 
 说明：后续如果你修改了云函数代码，需要重新上传/部署一次。
+
+### 5. 发行与上线
+
+仅保留 **H5 + uniCloud 云托管** 上线方式，不需要自建服务器。
+
+1. 确认已完成上面的数据库 Schema 上传与 `money-api` 云函数部署。
+2. 在 HBuilderX 中选择：`发行 -> 网站-H5手机版 -> 上传到云托管`。
+3. 选择要发布的 uniCloud 空间，等待构建与上传完成。
+4. 发布成功后，在 uniCloud 控制台获取访问地址（可绑定自定义域名）。
+5. 后续每次前端改动，重复“上传到云托管”即可覆盖更新。
+
+## 云托管发布成功示意
+
+![云托管发布成功示意](./static/5.png)
 
 
