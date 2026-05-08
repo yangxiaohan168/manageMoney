@@ -387,9 +387,11 @@ async function getSummary(payload = {}) {
 	const startAt = Number(payload.startAt || payload.monthStart || 0);
 	const endAt = Number(payload.endAt || payload.monthEnd || 0);
 	const hasPeriod = startAt > 0 && endAt > startAt;
+	const includeNameStats = !!payload.includeNameStats;
 
 	const $ = db.command.aggregate;
 	const _ = db.command;
+	let nameStats = [];
 
 	const totals = {
 		deposit: 0,
@@ -438,10 +440,56 @@ async function getSummary(payload = {}) {
 		totals.periodIncome = pick(incRes);
 		totals.periodExpense = pick(expRes);
 		totals.periodDeposit = pick(depRes);
+
+		if (includeNameStats) {
+			const statsRes = await recordsCollection
+				.aggregate()
+				.match(range)
+				.group({
+					_id: {
+						type: '$type',
+						name: '$name'
+					},
+					amount: $.sum('$amount'),
+					count: $.sum(1)
+				})
+				.end();
+
+			const rows = (statsRes.data || [])
+				.map((row) => {
+					const id = row._id || {};
+					const type = id.type || 'record';
+					const name = id.name || '未命名';
+					return {
+						key: `${type}:${name}`,
+						name,
+						type,
+						amount: Number(row.amount || 0),
+						count: Number(row.count || 0)
+					};
+				})
+				.filter((row) => row.amount > 0);
+
+			rows.sort((a, b) => b.amount - a.amount);
+			nameStats = rows.slice(0, 8);
+
+			const otherRows = rows.slice(8);
+			if (otherRows.length) {
+				nameStats.push({
+					key: 'other',
+					name: '其他',
+					type: 'other',
+					amount: otherRows.reduce((sum, row) => sum + row.amount, 0),
+					count: otherRows.reduce((sum, row) => sum + row.count, 0)
+				});
+			}
+		}
 	}
 
 	totals.periodNet = totals.periodIncome - totals.periodExpense;
-	return ok({ totals });
+	const data = { totals };
+	if (includeNameStats) data.nameStats = nameStats;
+	return ok(data);
 }
 
 exports.main = async (event = {}) => {

@@ -27,7 +27,7 @@
 			>
 				<view v-if="activeTab === 'today'" class="hero-card">
 					<view class="hero-date">{{ todayText }}</view>
-					<view class="hero-profit-label">今日收支</view>
+					<view class="hero-profit-label">{{ selectedRecordIsToday ? '今日收支' : '当日收支' }}</view>
 					<view :class="['hero-profit-amount', todayProfitLoss < 0 ? 'hero-profit-loss' : '']">
 						{{ formatMoney(todayProfitLoss, true) }}
 					</view>
@@ -36,7 +36,7 @@
 				<view v-if="activeTab === 'today'" class="panel">
 					<view class="section-header">
 						<view>
-							<view class="section-title">今日记录</view>
+							<view class="section-title">{{ selectedRecordIsToday ? '今日记录' : '日期记录' }}</view>
 							<view class="section-subtitle">{{ fullDateText }}</view>
 						</view>
 						<view class="header-actions">
@@ -44,7 +44,15 @@
 							<text class="add-record-btn" @click="openRecordForm()">+ 新建</text>
 						</view>
 					</view>
-					<view v-if="!todayList.length && !todayLoading" class="empty">今天还没有记录，点“+ 新建”记一笔。</view>
+					<view class="date-toolbar">
+						<text class="date-nav" @click="shiftSelectedRecordDate(-1)">前一天</text>
+						<picker mode="date" :value="selectedRecordDate" @change="changeSelectedRecordDate">
+							<view class="date-picker-value">{{ fullDateText }}</view>
+						</picker>
+						<text class="date-nav" @click="shiftSelectedRecordDate(1)">后一天</text>
+						<text v-if="!selectedRecordIsToday" class="date-today" @click="resetSelectedRecordDate">今天</text>
+					</view>
+					<view v-if="!todayList.length && !todayLoading" class="empty">{{ todayEmptyText }}</view>
 					<view v-else-if="todayList.length" class="timeline">
 						<uni-swipe-action>
 							<uni-swipe-action-item
@@ -109,6 +117,38 @@
 						<view class="summary-card">
 							<text>周期净额</text>
 							<strong>{{ formatMoney(summary.totals.periodNet, true) }}</strong>
+						</view>
+					</view>
+					<view class="pie-section">
+						<view class="chart-header">
+							<view class="chart-title">按记录名称占比</view>
+							<view class="chart-subtitle">跟随当前统计周期</view>
+						</view>
+						<view v-if="!nameStatsLegend.length" class="empty chart-empty">当前周期暂无记录。</view>
+						<view v-else class="pie-layout">
+							<canvas
+								canvas-id="nameStatsPie"
+								id="nameStatsPie"
+								class="pie-canvas"
+								:width="pieCanvasSize"
+								:height="pieCanvasSize"
+								:style="pieCanvasStyle"
+							></canvas>
+							<view class="pie-legend">
+								<view v-for="item in nameStatsLegend" :key="item.key" class="legend-row">
+									<view class="legend-main">
+										<text class="legend-dot" :style="{ backgroundColor: item.color }"></text>
+										<view class="legend-text">
+											<view class="legend-name">{{ item.name }}</view>
+											<view class="legend-meta">{{ recordTypeText(item.type) }} · {{ item.count }}笔</view>
+										</view>
+									</view>
+									<view class="legend-side">
+										<view>{{ formatMoney(item.amount) }}</view>
+										<text>{{ item.percentText }}</text>
+									</view>
+								</view>
+							</view>
 						</view>
 					</view>
 				</view>
@@ -248,19 +288,19 @@
 			</scroll-view>
 
 			<view class="bottom-tabbar">
-				<view :class="['tab-item', activeTab === 'today' ? 'active' : '']" @click="activeTab = 'today'">
+				<view :class="['tab-item', activeTab === 'today' ? 'active' : '']" @click="switchTab('today')">
 					<text class="tab-icon">今</text>
 					<text>今日记录</text>
 				</view>
-				<view :class="['tab-item', activeTab === 'stats' ? 'active' : '']" @click="activeTab = 'stats'">
+				<view :class="['tab-item', activeTab === 'stats' ? 'active' : '']" @click="switchTab('stats')">
 					<text class="tab-icon">统</text>
 					<text>统计</text>
 				</view>
-				<view :class="['tab-item', activeTab === 'deposit' ? 'active' : '']" @click="activeTab = 'deposit'">
+				<view :class="['tab-item', activeTab === 'deposit' ? 'active' : '']" @click="switchTab('deposit')">
 					<text class="tab-icon">存</text>
 					<text>存款</text>
 				</view>
-				<view :class="['tab-item', activeTab === 'human' ? 'active' : '']" @click="activeTab = 'human'">
+				<view :class="['tab-item', activeTab === 'human' ? 'active' : '']" @click="switchTab('human')">
 					<text class="tab-icon">情</text>
 					<text>人情</text>
 				</view>
@@ -343,6 +383,7 @@ export default {
 			confirmPasswordInput: '',
 			activeTab: 'today',
 			statPeriod: 'month',
+			selectedRecordDate: '',
 			summary: this.getEmptySummary(),
 			todaySummary: this.getEmptySummary(),
 			todayList: [],
@@ -395,6 +436,8 @@ export default {
 				name: '',
 				note: ''
 			},
+			pieCanvasSize: 180,
+			pieColors: ['#282321', '#c8171d', '#2f80ed', '#12b76a', '#f79009', '#7a5af8', '#0e9384', '#f63d68', '#98a2b3'],
 			periodOptions: [
 				{ label: '日', value: 'day' },
 				{ label: '周', value: 'week' },
@@ -405,11 +448,18 @@ export default {
 	},
 	computed: {
 		todayText() {
-			return `${String(new Date().getDate()).padStart(2, '0')}日`;
+			const date = this.parseDateInput(this.selectedRecordDate);
+			return `${String(date.getDate()).padStart(2, '0')}日`;
 		},
 		fullDateText() {
-			const date = new Date();
+			const date = this.parseDateInput(this.selectedRecordDate);
 			return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+		},
+		selectedRecordIsToday() {
+			return this.selectedRecordDate === this.formatDateInput(Date.now());
+		},
+		todayEmptyText() {
+			return this.selectedRecordIsToday ? '今天还没有记录，点“+ 新建”记一笔。' : '这天还没有记录，点“+ 新建”补一笔。';
 		},
 		todayProfitLoss() {
 			const t = this.todaySummary && this.todaySummary.totals;
@@ -419,6 +469,25 @@ export default {
 		statRangeLabel() {
 			const range = this.getPeriodRange(this.statPeriod);
 			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
+		},
+		nameStats() {
+			return (this.summary && this.summary.nameStats) || [];
+		},
+		nameStatsLegend() {
+			const total = this.nameStats.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+			if (!total) return [];
+			return this.nameStats.map((item, index) => {
+				const amount = Number(item.amount || 0);
+				const percent = amount / total;
+				return {
+					...item,
+					color: this.pieColors[index % this.pieColors.length],
+					percentText: `${(percent * 100).toFixed(percent >= 0.1 ? 0 : 1)}%`
+				};
+			});
+		},
+		pieCanvasStyle() {
+			return `width: ${this.pieCanvasSize}px; height: ${this.pieCanvasSize}px;`;
 		},
 		friendPickerNames() {
 			return this.friends.map((item) => item.name);
@@ -430,6 +499,7 @@ export default {
 		}
 	},
 	onLoad() {
+		this.selectedRecordDate = this.formatDateInput(Date.now());
 		this.recordForm.occurredDate = this.formatDateInput(Date.now());
 		this.recordForm.occurredTime = this.formatTimeInput(Date.now());
 		this.humanRecordForm.occurredDate = this.formatDateInput(Date.now());
@@ -445,7 +515,18 @@ export default {
 					periodExpense: 0,
 					periodDeposit: 0,
 					periodNet: 0
-				}
+				},
+				nameStats: []
+			};
+		},
+		normalizeSummary(data = {}) {
+			const empty = this.getEmptySummary();
+			return {
+				totals: {
+					...empty.totals,
+					...(data.totals || {})
+				},
+				nameStats: Array.isArray(data.nameStats) ? data.nameStats : []
 			};
 		},
 		async callMoney(action, payload = {}, withToken = true) {
@@ -516,13 +597,14 @@ export default {
 		},
 		async loadSummary() {
 			const range = this.getPeriodRange(this.statPeriod);
-			const dayRange = this.getPeriodRange('day');
+			const dayRange = this.getSelectedRecordDayRange();
 			const [summaryData, todaySummaryData] = await Promise.all([
-				this.callMoney('getSummary', range),
+				this.callMoney('getSummary', { ...range, includeNameStats: true }),
 				this.callMoney('getSummary', dayRange)
 			]);
-			this.summary = summaryData || this.getEmptySummary();
-			this.todaySummary = todaySummaryData || this.getEmptySummary();
+			this.summary = this.normalizeSummary(summaryData);
+			this.todaySummary = this.normalizeSummary(todaySummaryData);
+			this.$nextTick(() => this.drawNameStatsPie());
 		},
 		async loadAll() {
 			try {
@@ -584,7 +666,7 @@ export default {
 			const page = reset ? 1 : this.todayPage + 1;
 			this.todayLoading = true;
 			try {
-				const range = this.getPeriodRange('day');
+				const range = this.getSelectedRecordDayRange();
 				const data = await this.callMoney('listRecords', {
 					types: ['income', 'expense'],
 					startAt: range.startAt,
@@ -668,7 +750,7 @@ export default {
 				name: '',
 				amount: '',
 				note: '',
-				occurredDate: this.formatDateInput(Date.now()),
+				occurredDate: type === 'deposit' ? this.formatDateInput(Date.now()) : (this.selectedRecordDate || this.formatDateInput(Date.now())),
 				occurredTime: this.formatTimeInput(Date.now())
 			};
 			this.showRecordForm = true;
@@ -873,6 +955,33 @@ export default {
 				url: `/pages/money/friend?friendId=${encodeURIComponent(friend._id)}&friendName=${encodeURIComponent(friend.name)}`
 			});
 		},
+		switchTab(tab) {
+			this.activeTab = tab;
+			if (tab === 'stats') {
+				this.$nextTick(() => this.drawNameStatsPie());
+			}
+		},
+		async changeSelectedRecordDate(e) {
+			const value = e && e.detail ? e.detail.value : '';
+			if (!value || value === this.selectedRecordDate) return;
+			await this.setSelectedRecordDate(value);
+		},
+		async shiftSelectedRecordDate(offset) {
+			const date = this.parseDateInput(this.selectedRecordDate);
+			date.setDate(date.getDate() + offset);
+			await this.setSelectedRecordDate(this.formatDateInput(date.getTime()));
+		},
+		async resetSelectedRecordDate() {
+			await this.setSelectedRecordDate(this.formatDateInput(Date.now()));
+		},
+		async setSelectedRecordDate(dateStr) {
+			this.selectedRecordDate = this.formatDateInput(this.parseDateInput(dateStr).getTime());
+			try {
+				await Promise.all([this.loadSummary(), this.fetchTodayRecords(true)]);
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			}
+		},
 		async handleRefresh() {
 			if (this.refreshing) return;
 			this.refreshing = true;
@@ -882,8 +991,26 @@ export default {
 				this.refreshing = false;
 			}
 		},
-		getPeriodRange(period) {
-			const now = new Date();
+		parseDateInput(value) {
+			if (typeof value === 'string') {
+				const parts = value.split('-').map(Number);
+				if (parts.length === 3 && parts.every((item) => Number.isFinite(item))) {
+					const parsed = new Date(parts[0], parts[1] - 1, parts[2]);
+					if (Number.isFinite(parsed.getTime())) return parsed;
+				}
+			}
+			const source = value === undefined || value === null || value === '' ? Date.now() : value;
+			const date = new Date(source);
+			if (!Number.isFinite(date.getTime())) return new Date();
+			return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+		},
+		getSelectedRecordDayRange() {
+			const start = this.parseDateInput(this.selectedRecordDate);
+			const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+			return { startAt: start.getTime(), endAt: end.getTime() };
+		},
+		getPeriodRange(period, baseValue = Date.now()) {
+			const now = this.parseDateInput(baseValue);
 			let start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 			let end = new Date(start);
 			if (period === 'week') {
@@ -900,6 +1027,41 @@ export default {
 				end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
 			}
 			return { startAt: start.getTime(), endAt: end.getTime() };
+		},
+		drawNameStatsPie() {
+			if (this.activeTab !== 'stats') return;
+			const ctx = uni.createCanvasContext('nameStatsPie', this);
+			if (!ctx) return;
+
+			const size = this.pieCanvasSize;
+			const center = size / 2;
+			const radius = center - 6;
+			const stats = this.nameStatsLegend.filter((item) => Number(item.amount || 0) > 0);
+			const total = stats.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+			ctx.clearRect(0, 0, size, size);
+			if (!stats.length || !total) {
+				ctx.draw();
+				return;
+			}
+
+			let startAngle = -Math.PI / 2;
+			stats.forEach((item, index) => {
+				const amount = Number(item.amount || 0);
+				const angle = index === stats.length - 1 ? Math.max(0, Math.PI * 1.5 - startAngle) : (amount / total) * Math.PI * 2;
+				const endAngle = startAngle + angle;
+				ctx.beginPath();
+				ctx.moveTo(center, center);
+				ctx.arc(center, center, radius, startAngle, endAngle);
+				ctx.closePath();
+				ctx.setFillStyle(item.color);
+				ctx.fill();
+				ctx.setLineWidth(2);
+				ctx.setStrokeStyle('#ffffff');
+				ctx.stroke();
+				startAngle = endAngle;
+			});
+			ctx.draw();
 		},
 		formatDateInput(timestamp) {
 			const date = new Date(timestamp);
@@ -954,7 +1116,7 @@ export default {
 			return `${sign}${value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 		},
 		recordTypeText(type) {
-			return { income: '收入', expense: '支出', deposit: '存款' }[type] || '记录';
+			return { income: '收入', expense: '支出', deposit: '存款', other: '合并' }[type] || '记录';
 		},
 		recordIcon(type) {
 			return { income: '入', expense: '支', deposit: '存' }[type] || '记';
@@ -1136,6 +1298,40 @@ export default {
 	gap: 18rpx;
 }
 
+.date-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 12rpx;
+	margin: 22rpx 0 8rpx;
+	flex-wrap: wrap;
+}
+
+.date-nav,
+.date-today,
+.date-picker-value {
+	min-height: 62rpx;
+	line-height: 62rpx;
+	padding: 0 20rpx;
+	border-radius: 18rpx;
+	background: #f2f4f7;
+	color: #667085;
+	font-size: 24rpx;
+	box-sizing: border-box;
+}
+
+.date-picker-value {
+	min-width: 220rpx;
+	text-align: center;
+	background: #282321;
+	color: #ffffff;
+	font-weight: 700;
+}
+
+.date-today {
+	background: #fff7ed;
+	color: #c2410c;
+}
+
 .add-record-btn {
 	padding: 12rpx 22rpx;
 	border-radius: 999rpx;
@@ -1174,6 +1370,98 @@ export default {
 	padding: 22rpx;
 	border-radius: 18rpx;
 	background: #f7f7f7;
+}
+
+.pie-section {
+	margin-top: 28rpx;
+	padding-top: 26rpx;
+	border-top: 1px solid #f0f0f0;
+}
+
+.chart-header {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 16rpx;
+	margin-bottom: 20rpx;
+}
+
+.chart-title {
+	font-size: 30rpx;
+	font-weight: 800;
+}
+
+.chart-subtitle,
+.legend-meta,
+.legend-side text {
+	color: #667085;
+	font-size: 22rpx;
+}
+
+.chart-empty {
+	padding: 40rpx 0 22rpx;
+}
+
+.pie-layout {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 22rpx;
+}
+
+.pie-canvas {
+	display: block;
+	flex-shrink: 0;
+}
+
+.pie-legend {
+	width: 100%;
+}
+
+.legend-row,
+.legend-main {
+	display: flex;
+	align-items: center;
+}
+
+.legend-row {
+	justify-content: space-between;
+	gap: 18rpx;
+	min-height: 72rpx;
+	border-bottom: 1px solid #f5f5f5;
+}
+
+.legend-main {
+	flex: 1;
+	min-width: 0;
+	gap: 14rpx;
+}
+
+.legend-dot {
+	display: block;
+	width: 18rpx;
+	height: 18rpx;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.legend-text {
+	min-width: 0;
+}
+
+.legend-name {
+	font-size: 26rpx;
+	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.legend-side {
+	text-align: right;
+	font-size: 24rpx;
+	font-weight: 700;
+	flex-shrink: 0;
 }
 
 .period-tabs {
