@@ -198,40 +198,6 @@
 							</view>
 						</view>
 					</view>
-					<view class="pie-section">
-						<view class="chart-header">
-							<view>
-								<view class="chart-title">按记录名称占比</view>
-								<view class="chart-subtitle">跟随当前统计周期</view>
-							</view>
-						</view>
-						<view v-if="!nameStatsLegend.length" class="empty chart-empty">当前周期暂无记录。</view>
-						<view v-else class="pie-layout">
-							<canvas
-								canvas-id="nameStatsPie"
-								id="nameStatsPie"
-								class="pie-canvas"
-								:width="pieCanvasSize"
-								:height="pieCanvasSize"
-								:style="pieCanvasStyle"
-							></canvas>
-							<view class="pie-legend">
-								<view v-for="item in nameStatsLegend" :key="item.key" class="legend-row">
-									<view class="legend-main">
-										<text class="legend-dot" :style="{ backgroundColor: item.color }"></text>
-										<view class="legend-text">
-											<view class="legend-name">{{ item.name }}</view>
-											<view class="legend-meta">{{ recordTypeText(item.type) }} · {{ item.count }}笔</view>
-										</view>
-									</view>
-									<view class="legend-side">
-										<view>{{ formatMoney(item.amount) }}</view>
-										<text>{{ item.percentText }}</text>
-									</view>
-								</view>
-							</view>
-						</view>
-					</view>
 				</view>
 
 				<view v-else-if="activeTab === 'deposit'" class="panel">
@@ -535,8 +501,6 @@ export default {
 				name: '',
 				note: ''
 			},
-			pieCanvasSize: 180,
-			pieColors: ['#282321', '#c8171d', '#2f80ed', '#12b76a', '#f79009', '#7a5af8', '#0e9384', '#f63d68', '#98a2b3'],
 			dailyChartOpts: {
 				color: ['#c8171d', '#12b76a'],
 				padding: [10, 10, 0, 0],
@@ -598,22 +562,6 @@ export default {
 			const range = this.getPeriodRange(this.statPeriod);
 			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
 		},
-		nameStats() {
-			return (this.summary && this.summary.nameStats) || [];
-		},
-		nameStatsLegend() {
-			const total = this.nameStats.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-			if (!total) return [];
-			return this.nameStats.map((item, index) => {
-				const amount = Number(item.amount || 0);
-				const percent = amount / total;
-				return {
-					...item,
-					color: this.pieColors[index % this.pieColors.length],
-					percentText: `${(percent * 100).toFixed(percent >= 0.1 ? 0 : 1)}%`
-				};
-			});
-		},
 		dailyChartData() {
 			return {
 				categories: this.dailyStats.map((item) => item.label),
@@ -637,9 +585,6 @@ export default {
 		},
 		dailyIncomeTotal() {
 			return this.dailyStats.reduce((sum, item) => sum + Number(item.income || 0), 0);
-		},
-		pieCanvasStyle() {
-			return `width: ${this.pieCanvasSize}px; height: ${this.pieCanvasSize}px;`;
 		},
 		friendPickerNames() {
 			return this.friends.map((item) => item.name);
@@ -667,8 +612,7 @@ export default {
 					periodExpense: 0,
 					periodDeposit: 0,
 					periodNet: 0
-				},
-				nameStats: []
+				}
 			};
 		},
 		normalizeSummary(data = {}) {
@@ -677,8 +621,7 @@ export default {
 				totals: {
 					...empty.totals,
 					...(data.totals || {})
-				},
-				nameStats: Array.isArray(data.nameStats) ? data.nameStats : []
+				}
 			};
 		},
 		normalizeDailyStats(rows = [], days = []) {
@@ -793,14 +736,13 @@ export default {
 			const dayRange = this.getSelectedRecordDayRange();
 			const dailyDays = this.getLastTenDayRanges();
 			const [summaryData, todaySummaryData, dailyData] = await Promise.all([
-				this.callMoney('getSummary', { ...range, includeNameStats: true }),
+				this.callMoney('getSummary', range),
 				this.callMoney('getSummary', dayRange),
 				this.callMoney('getDailyStats', { days: dailyDays })
 			]);
 			this.summary = this.normalizeSummary(summaryData);
 			this.todaySummary = this.normalizeSummary(todaySummaryData);
 			this.dailyStats = this.normalizeDailyStats(dailyData.days || [], dailyDays);
-			this.$nextTick(() => this.drawNameStatsPie());
 		},
 		async loadAll() {
 			try {
@@ -1145,9 +1087,6 @@ export default {
 		},
 		switchTab(tab) {
 			this.activeTab = tab;
-			if (tab === 'stats') {
-				this.$nextTick(() => this.drawNameStatsPie());
-			}
 		},
 		async changeSelectedRecordDate(e) {
 			const value = e && e.detail ? e.detail.value : '';
@@ -1215,41 +1154,6 @@ export default {
 				end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
 			}
 			return { startAt: start.getTime(), endAt: end.getTime() };
-		},
-		drawNameStatsPie() {
-			if (this.activeTab !== 'stats') return;
-			const ctx = uni.createCanvasContext('nameStatsPie', this);
-			if (!ctx) return;
-
-			const size = this.pieCanvasSize;
-			const center = size / 2;
-			const radius = center - 6;
-			const stats = this.nameStatsLegend.filter((item) => Number(item.amount || 0) > 0);
-			const total = stats.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-
-			ctx.clearRect(0, 0, size, size);
-			if (!stats.length || !total) {
-				ctx.draw();
-				return;
-			}
-
-			let startAngle = -Math.PI / 2;
-			stats.forEach((item, index) => {
-				const amount = Number(item.amount || 0);
-				const angle = index === stats.length - 1 ? Math.max(0, Math.PI * 1.5 - startAngle) : (amount / total) * Math.PI * 2;
-				const endAngle = startAngle + angle;
-				ctx.beginPath();
-				ctx.moveTo(center, center);
-				ctx.arc(center, center, radius, startAngle, endAngle);
-				ctx.closePath();
-				ctx.setFillStyle(item.color);
-				ctx.fill();
-				ctx.setLineWidth(2);
-				ctx.setStrokeStyle('#ffffff');
-				ctx.stroke();
-				startAngle = endAngle;
-			});
-			ctx.draw();
 		},
 		formatDateInput(timestamp) {
 			const date = new Date(timestamp);
@@ -1647,12 +1551,6 @@ export default {
 	gap: 8rpx;
 }
 
-.pie-section {
-	margin-top: 28rpx;
-	padding-top: 26rpx;
-	border-top: 1px solid #f0f0f0;
-}
-
 .chart-section {
 	margin-top: 28rpx;
 	padding: 24rpx;
@@ -1675,8 +1573,7 @@ export default {
 }
 
 .chart-subtitle,
-.legend-meta,
-.legend-side text {
+.chart-empty {
 	color: #667085;
 	font-size: 22rpx;
 }
@@ -1722,68 +1619,6 @@ export default {
 	display: block;
 	margin-top: 8rpx;
 	font-size: 28rpx;
-}
-
-.pie-layout {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 22rpx;
-}
-
-.pie-canvas {
-	display: block;
-	flex-shrink: 0;
-}
-
-.pie-legend {
-	width: 100%;
-}
-
-.legend-row,
-.legend-main {
-	display: flex;
-	align-items: center;
-}
-
-.legend-row {
-	justify-content: space-between;
-	gap: 18rpx;
-	min-height: 72rpx;
-	border-bottom: 1px solid #f5f5f5;
-}
-
-.legend-main {
-	flex: 1;
-	min-width: 0;
-	gap: 14rpx;
-}
-
-.legend-dot {
-	display: block;
-	width: 18rpx;
-	height: 18rpx;
-	border-radius: 50%;
-	flex-shrink: 0;
-}
-
-.legend-text {
-	min-width: 0;
-}
-
-.legend-name {
-	font-size: 26rpx;
-	font-weight: 700;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.legend-side {
-	text-align: right;
-	font-size: 24rpx;
-	font-weight: 700;
-	flex-shrink: 0;
 }
 
 .period-tabs {
@@ -1902,6 +1737,8 @@ export default {
 .record-side {
 	text-align: right;
 	flex-shrink: 0;
+	padding-right: 24rpx;
+	box-sizing: border-box;
 }
 
 .record-amount {

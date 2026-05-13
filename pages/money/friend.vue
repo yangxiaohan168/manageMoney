@@ -257,6 +257,8 @@ export default {
 	font-size: 30rpx;
 	font-weight: 800;
 	flex-shrink: 0;
+	padding-right: 20rpx;
+	box-sizing: border-box;
 }
 
 .danger {
