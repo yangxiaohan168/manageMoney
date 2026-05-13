@@ -60,7 +60,7 @@ export default {
 		if (state.direction !== 'horizontal') {
 			return;
 		}
-		if (e.preventDefault) {
+		if (e.preventDefault && e.cancelable) {
 			// 阻止页面滚动
 			e.preventDefault()
 		}

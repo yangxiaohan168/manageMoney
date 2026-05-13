@@ -244,7 +244,7 @@
 		/* #ifndef APP-NVUE */
 		display: flex;
 		flex-shrink: 0;
-		// touch-action: none;
+		touch-action: pan-y;
 		/* #endif */
 		position: relative;
 	}
