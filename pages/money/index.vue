@@ -21,6 +21,7 @@
 			<scroll-view
 				scroll-y
 				class="content"
+				:show-scrollbar="false"
 				:refresher-enabled="true"
 				:refresher-triggered="refreshing"
 				@refresherrefresh="handleRefresh"
@@ -505,6 +506,7 @@ export default {
 				color: ['#c8171d', '#12b76a'],
 				padding: [10, 10, 0, 0],
 				enableScroll: false,
+				dataLabel: false,
 				legend: {
 					show: true,
 					position: 'top',
@@ -1324,6 +1326,13 @@ export default {
 	height: 100vh;
 	padding: 18rpx 18rpx 160rpx;
 	box-sizing: border-box;
+	scrollbar-width: none;
+}
+
+.content::-webkit-scrollbar {
+	width: 0;
+	height: 0;
+	display: none;
 }
 
 .hero-card {
@@ -1648,11 +1657,21 @@ export default {
 
 .timeline {
 	position: relative;
+	overflow: hidden;
+	border-right: 0;
+}
+
+.timeline .uni-swipe,
+.timeline .uni-swipe_box,
+.timeline .uni-swipe_text--center {
+	border-right: 0;
+	box-shadow: none;
 }
 
 .record-item {
 	min-height: 116rpx;
 	border-bottom: 1px solid #f0f0f0;
+	border-right: 0;
 	gap: 16rpx;
 }
 
