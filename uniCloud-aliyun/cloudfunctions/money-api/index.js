@@ -383,6 +383,54 @@ async function listRecords(payload = {}) {
 	});
 }
 
+async function sumRecordsByTypeAndRange(type, startAt, endAt) {
+	const $ = db.command.aggregate;
+	const _ = db.command;
+	const res = await recordsCollection
+		.aggregate()
+		.match({
+			type,
+			occurred_at: _.gte(startAt).and(_.lt(endAt))
+		})
+		.group({
+			_id: null,
+			sum: $.sum('$amount')
+		})
+		.end();
+	const row = res.data && res.data[0];
+	return row ? Number(row.sum || 0) : 0;
+}
+
+async function getDailyStats(payload = {}) {
+	const days = Array.isArray(payload.days) ? payload.days.slice(0, 31) : [];
+	if (!days.length) return ok({ days: [] });
+
+	const normalizedDays = days
+		.map((item) => {
+			const startAt = Number(item.startAt || 0);
+			const endAt = Number(item.endAt || 0);
+			return {
+				key: String(item.key || startAt),
+				label: String(item.label || ''),
+				startAt,
+				endAt
+			};
+		})
+		.filter((item) => item.startAt > 0 && item.endAt > item.startAt);
+
+	const rows = await Promise.all(
+		normalizedDays.map(async (day) => {
+			const [income, expense] = await Promise.all([
+				sumRecordsByTypeAndRange('income', day.startAt, day.endAt),
+				sumRecordsByTypeAndRange('expense', day.startAt, day.endAt)
+			]);
+			return { ...day, income, expense };
+		})
+	);
+
+	return ok({ days: rows });
+}
+
 async function getSummary(payload = {}) {
 	const startAt = Number(payload.startAt || payload.monthStart || 0);
 	const endAt = Number(payload.endAt || payload.monthEnd || 0);
@@ -506,6 +554,7 @@ exports.main = async (event = {}) => {
 		if (action === 'updateRecord') return await updateRecord(payload);
 		if (action === 'deleteRecord') return await deleteRecord(payload);
 		if (action === 'listRecords') return await listRecords(payload);
+		if (action === 'getDailyStats') return await getDailyStats(payload);
 		if (action === 'getSummary') return await getSummary(payload);
 		if (action === 'listFriends') return await listFriends();
 		if (action === 'upsertFriend') return await upsertFriend(payload);

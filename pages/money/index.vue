@@ -26,10 +26,28 @@
 				@refresherrefresh="handleRefresh"
 			>
 				<view v-if="activeTab === 'today'" class="hero-card">
-					<view class="hero-date">{{ todayText }}</view>
-					<view class="hero-profit-label">{{ selectedRecordIsToday ? '今日收支' : '当日收支' }}</view>
+					<view class="hero-top">
+						<view>
+							<view class="hero-date">
+								<uni-icons type="calendar-filled" size="19" color="#ffffff"></uni-icons>
+								<text>{{ todayText }}</text>
+							</view>
+							<view class="hero-profit-label">{{ selectedRecordIsToday ? '今日收支' : '当日收支' }}</view>
+						</view>
+						<view class="hero-chip">{{ selectedRecordIsToday ? '今天' : '历史' }}</view>
+					</view>
 					<view :class="['hero-profit-amount', todayProfitLoss < 0 ? 'hero-profit-loss' : '']">
 						{{ formatMoney(todayProfitLoss, true) }}
+					</view>
+					<view class="hero-metrics">
+						<view>
+							<text>收入</text>
+							<strong>{{ formatMoney(todaySummary.totals.periodIncome) }}</strong>
+						</view>
+						<view>
+							<text>支出</text>
+							<strong>{{ formatMoney(todaySummary.totals.periodExpense) }}</strong>
+						</view>
 					</view>
 				</view>
 
@@ -40,8 +58,14 @@
 							<view class="section-subtitle">{{ fullDateText }}</view>
 						</view>
 						<view class="header-actions">
-							<text class="refresh" @click="loadAll">刷新</text>
-							<text class="add-record-btn" @click="openRecordForm()">+ 新建</text>
+							<view class="refresh" @click="loadAll">
+								<uni-icons type="refresh" size="15" color="#667085"></uni-icons>
+								<text>刷新</text>
+							</view>
+							<view class="add-record-btn" @click="openRecordForm()">
+								<uni-icons type="plus" size="15" color="#ffffff"></uni-icons>
+								<text>新建</text>
+							</view>
 						</view>
 					</view>
 					<view class="date-toolbar">
@@ -64,7 +88,9 @@
 								<view class="record-item">
 							<view class="record-node">
 								<view v-if="index !== 0" class="node-line top-line"></view>
-								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+								<view :class="['record-dot', 'record-dot-' + record.type]">
+									<uni-icons :type="recordIconType(record.type)" size="18" :color="recordIconColor(record.type)"></uni-icons>
+								</view>
 								<view v-if="index !== todayList.length - 1" class="node-line bottom-line"></view>
 							</view>
 							<view class="record-main">
@@ -88,8 +114,16 @@
 					<view v-else-if="todayLoading" class="empty">加载中…</view>
 				</view>
 
-				<view v-else-if="activeTab === 'stats'" class="panel">
-					<view class="section-title">统计</view>
+				<view v-else-if="activeTab === 'stats'" class="panel stats-panel">
+					<view class="section-header compact-header">
+						<view>
+							<view class="section-title section-title-icon">
+								<uni-icons type="bars" size="22" color="#2563eb"></uni-icons>
+								<text>统计</text>
+							</view>
+							<view class="section-subtitle">周期汇总与最近 10 天走势</view>
+						</view>
+					</view>
 					<view class="period-tabs">
 						<text
 							v-for="item in periodOptions"
@@ -103,26 +137,73 @@
 					<view class="period-label">{{ statRangeLabel }}</view>
 					<view class="summary-grid">
 						<view class="summary-card">
-							<text>周期收入</text>
+							<view class="summary-label">
+								<uni-icons type="download-filled" size="16" color="#12b76a"></uni-icons>
+								<text>周期收入</text>
+							</view>
 							<strong>{{ formatMoney(summary.totals.periodIncome) }}</strong>
 						</view>
 						<view class="summary-card">
-							<text>周期支出</text>
+							<view class="summary-label">
+								<uni-icons type="upload-filled" size="16" color="#c8171d"></uni-icons>
+								<text>周期支出</text>
+							</view>
 							<strong class="danger-text">{{ formatMoney(summary.totals.periodExpense) }}</strong>
 						</view>
 						<view class="summary-card">
-							<text>周期存款</text>
+							<view class="summary-label">
+								<uni-icons type="wallet-filled" size="16" color="#2563eb"></uni-icons>
+								<text>周期存款</text>
+							</view>
 							<strong>{{ formatMoney(summary.totals.periodDeposit) }}</strong>
 						</view>
 						<view class="summary-card">
-							<text>周期净额</text>
+							<view class="summary-label">
+								<uni-icons type="flag-filled" size="16" color="#f79009"></uni-icons>
+								<text>周期净额</text>
+							</view>
 							<strong>{{ formatMoney(summary.totals.periodNet, true) }}</strong>
+						</view>
+					</view>
+					<view class="chart-section">
+						<view class="chart-header">
+							<view>
+								<view class="chart-title">最近 10 天收支</view>
+								<view class="chart-subtitle">每天收入 / 支出双柱展示</view>
+							</view>
+							<view class="chart-pill">
+								<uni-icons type="calendar" size="14" color="#2563eb"></uni-icons>
+								<text>10天</text>
+							</view>
+						</view>
+						<view v-if="dailyChartReady" class="daily-chart-card">
+							<qiun-data-charts
+								type="column"
+								canvas-id="dailyTrendColumn"
+								:canvas2d="true"
+								:chartData="dailyChartData"
+								:opts="dailyChartOpts"
+								background="rgba(0,0,0,0)"
+							></qiun-data-charts>
+						</view>
+						<view v-else class="empty chart-empty">最近 10 天暂无收入或支出记录。</view>
+						<view class="daily-total-row">
+							<view>
+								<text>10天支出</text>
+								<strong class="danger-text">{{ formatMoney(dailyExpenseTotal) }}</strong>
+							</view>
+							<view>
+								<text>10天收入</text>
+								<strong>{{ formatMoney(dailyIncomeTotal) }}</strong>
+							</view>
 						</view>
 					</view>
 					<view class="pie-section">
 						<view class="chart-header">
-							<view class="chart-title">按记录名称占比</view>
-							<view class="chart-subtitle">跟随当前统计周期</view>
+							<view>
+								<view class="chart-title">按记录名称占比</view>
+								<view class="chart-subtitle">跟随当前统计周期</view>
+							</view>
 						</view>
 						<view v-if="!nameStatsLegend.length" class="empty chart-empty">当前周期暂无记录。</view>
 						<view v-else class="pie-layout">
@@ -160,7 +241,10 @@
 							<view class="section-subtitle">存款记录</view>
 						</view>
 						<view class="header-actions">
-							<text class="add-record-btn" @click="openRecordForm('deposit')">新建存款</text>
+							<view class="add-record-btn add-record-btn-blue" @click="openRecordForm('deposit')">
+								<uni-icons type="wallet-filled" size="15" color="#ffffff"></uni-icons>
+								<text>新建存款</text>
+							</view>
 						</view>
 					</view>
 					<view class="summary-strip">
@@ -181,7 +265,9 @@
 								<view class="record-item">
 							<view class="record-node">
 								<view v-if="index !== 0" class="node-line top-line"></view>
-								<view class="record-dot"><text>{{ recordIcon(record.type) }}</text></view>
+								<view :class="['record-dot', 'record-dot-' + record.type]">
+									<uni-icons :type="recordIconType(record.type)" size="18" :color="recordIconColor(record.type)"></uni-icons>
+								</view>
 								<view v-if="index !== depositList.length - 1" class="node-line bottom-line"></view>
 							</view>
 							<view class="record-main">
@@ -210,7 +296,10 @@
 							<view class="section-subtitle">总计 {{ formatMoney(humanSummary.net, true) }}</view>
 						</view>
 						<view class="header-actions">
-							<text class="add-record-btn" @click="openHumanRecordForm()">新建人情</text>
+							<view class="add-record-btn add-record-btn-amber" @click="openHumanRecordForm()">
+								<uni-icons type="gift-filled" size="15" color="#ffffff"></uni-icons>
+								<text>新建人情</text>
+							</view>
 						</view>
 					</view>
 					<view class="period-tabs">
@@ -238,6 +327,9 @@
 									@click="onHumanRecordActionClick($event, record)"
 								>
 									<view class="record-item">
+										<view :class="['record-dot', record.type === 'human_expense' ? 'record-dot-expense' : 'record-dot-income', 'compact-dot']">
+											<uni-icons type="gift-filled" size="17" :color="record.type === 'human_expense' ? '#c8171d' : '#12b76a'"></uni-icons>
+										</view>
 										<view class="record-main">
 											<view class="record-name">{{ record.friend_name }}</view>
 											<view class="record-note">{{ record.type === 'human_income' ? '收礼' : '送礼' }}{{ record.note ? ' · ' + record.note : '' }}</view>
@@ -260,7 +352,10 @@
 					<view v-else>
 						<view class="section-header">
 							<view class="section-subtitle">点击朋友可查看全部收支明细</view>
-							<text class="add-record-btn" @click="openFriendForm()">新增朋友</text>
+							<view class="add-record-btn" @click="openFriendForm()">
+								<uni-icons type="personadd-filled" size="15" color="#ffffff"></uni-icons>
+								<text>新增朋友</text>
+							</view>
 						</view>
 						<view v-if="!friends.length" class="empty">还没有朋友，先新增一个吧。</view>
 						<view v-else class="timeline">
@@ -272,6 +367,9 @@
 									@click="onFriendActionClick($event, friend)"
 								>
 									<view class="record-item friend-item" @click="openFriendDetail(friend)">
+										<view class="record-dot compact-dot record-dot-friend">
+											<uni-icons type="person-filled" size="17" color="#2563eb"></uni-icons>
+										</view>
 										<view class="record-main">
 											<view class="record-name">{{ friend.name }}</view>
 											<view class="record-note">{{ friend.note || '无备注' }}</view>
@@ -289,19 +387,19 @@
 
 			<view class="bottom-tabbar">
 				<view :class="['tab-item', activeTab === 'today' ? 'active' : '']" @click="switchTab('today')">
-					<text class="tab-icon">今</text>
+					<uni-icons type="calendar-filled" size="23" :color="activeTab === 'today' ? '#282321' : '#667085'"></uni-icons>
 					<text>今日记录</text>
 				</view>
 				<view :class="['tab-item', activeTab === 'stats' ? 'active' : '']" @click="switchTab('stats')">
-					<text class="tab-icon">统</text>
+					<uni-icons type="bars" size="23" :color="activeTab === 'stats' ? '#282321' : '#667085'"></uni-icons>
 					<text>统计</text>
 				</view>
 				<view :class="['tab-item', activeTab === 'deposit' ? 'active' : '']" @click="switchTab('deposit')">
-					<text class="tab-icon">存</text>
+					<uni-icons type="wallet-filled" size="23" :color="activeTab === 'deposit' ? '#282321' : '#667085'"></uni-icons>
 					<text>存款</text>
 				</view>
 				<view :class="['tab-item', activeTab === 'human' ? 'active' : '']" @click="switchTab('human')">
-					<text class="tab-icon">情</text>
+					<uni-icons type="gift-filled" size="23" :color="activeTab === 'human' ? '#282321' : '#667085'"></uni-icons>
 					<text>人情</text>
 				</view>
 			</view>
@@ -386,6 +484,7 @@ export default {
 			selectedRecordDate: '',
 			summary: this.getEmptySummary(),
 			todaySummary: this.getEmptySummary(),
+			dailyStats: [],
 			todayList: [],
 			todayPage: 1,
 			todayTotal: 0,
@@ -438,6 +537,35 @@ export default {
 			},
 			pieCanvasSize: 180,
 			pieColors: ['#282321', '#c8171d', '#2f80ed', '#12b76a', '#f79009', '#7a5af8', '#0e9384', '#f63d68', '#98a2b3'],
+			dailyChartOpts: {
+				color: ['#c8171d', '#12b76a'],
+				padding: [10, 10, 0, 0],
+				enableScroll: false,
+				legend: {
+					show: true,
+					position: 'top',
+					float: 'right',
+					margin: 8
+				},
+				xAxis: {
+					disableGrid: true,
+					fontColor: '#667085',
+					fontSize: 10
+				},
+				yAxis: {
+					gridType: 'dash',
+					dashLength: 3,
+					data: [{ min: 0, fontColor: '#98a2b3' }]
+				},
+				extra: {
+					column: {
+						type: 'group',
+						width: 12,
+						activeBgColor: '#101828',
+						activeBgOpacity: 0.06
+					}
+				}
+			},
 			periodOptions: [
 				{ label: '日', value: 'day' },
 				{ label: '周', value: 'week' },
@@ -486,6 +614,30 @@ export default {
 				};
 			});
 		},
+		dailyChartData() {
+			return {
+				categories: this.dailyStats.map((item) => item.label),
+				series: [
+					{
+						name: '支出',
+						data: this.dailyStats.map((item) => this.centsToYuan(item.expense))
+					},
+					{
+						name: '收入',
+						data: this.dailyStats.map((item) => this.centsToYuan(item.income))
+					}
+				]
+			};
+		},
+		dailyChartReady() {
+			return this.dailyStats.some((item) => Number(item.income || 0) > 0 || Number(item.expense || 0) > 0);
+		},
+		dailyExpenseTotal() {
+			return this.dailyStats.reduce((sum, item) => sum + Number(item.expense || 0), 0);
+		},
+		dailyIncomeTotal() {
+			return this.dailyStats.reduce((sum, item) => sum + Number(item.income || 0), 0);
+		},
 		pieCanvasStyle() {
 			return `width: ${this.pieCanvasSize}px; height: ${this.pieCanvasSize}px;`;
 		},
@@ -528,6 +680,47 @@ export default {
 				},
 				nameStats: Array.isArray(data.nameStats) ? data.nameStats : []
 			};
+		},
+		normalizeDailyStats(rows = [], days = []) {
+			const rowMap = rows.reduce((map, item) => {
+				map[item.key] = item;
+				return map;
+			}, {});
+			return days.map((day) => {
+				const row = rowMap[day.key] || {};
+				return {
+					...day,
+					income: Number(row.income || 0),
+					expense: Number(row.expense || 0)
+				};
+			});
+		},
+		getLastTenDayRanges() {
+			const today = this.parseDateInput(Date.now());
+			const days = [];
+			for (let i = 9; i >= 0; i -= 1) {
+				const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+				const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+				days.push({
+					key: this.formatDateInput(start.getTime()),
+					label: `${start.getMonth() + 1}/${start.getDate()}`,
+					startAt: start.getTime(),
+					endAt: end.getTime()
+				});
+			}
+			return days;
+		},
+		sortRecordsByTime(records = []) {
+			return records.slice().sort((a, b) => {
+				const occurredDiff = Number(b.occurred_at || 0) - Number(a.occurred_at || 0);
+				if (occurredDiff) return occurredDiff;
+				const createdDiff = Number(b.created_at || 0) - Number(a.created_at || 0);
+				if (createdDiff) return createdDiff;
+				return String(b._id || '').localeCompare(String(a._id || ''));
+			});
+		},
+		centsToYuan(cents) {
+			return Number((Number(cents || 0) / 100).toFixed(2));
 		},
 		async callMoney(action, payload = {}, withToken = true) {
 			const res = await uniCloud.callFunction({
@@ -598,12 +791,15 @@ export default {
 		async loadSummary() {
 			const range = this.getPeriodRange(this.statPeriod);
 			const dayRange = this.getSelectedRecordDayRange();
-			const [summaryData, todaySummaryData] = await Promise.all([
+			const dailyDays = this.getLastTenDayRanges();
+			const [summaryData, todaySummaryData, dailyData] = await Promise.all([
 				this.callMoney('getSummary', { ...range, includeNameStats: true }),
-				this.callMoney('getSummary', dayRange)
+				this.callMoney('getSummary', dayRange),
+				this.callMoney('getDailyStats', { days: dailyDays })
 			]);
 			this.summary = this.normalizeSummary(summaryData);
 			this.todaySummary = this.normalizeSummary(todaySummaryData);
+			this.dailyStats = this.normalizeDailyStats(dailyData.days || [], dailyDays);
 			this.$nextTick(() => this.drawNameStatsPie());
 		},
 		async loadAll() {
@@ -642,8 +838,8 @@ export default {
 			this.humanLoading = true;
 			try {
 				const data = await this.callMoney('listHumanRecords', { page, pageSize: 10, friendId });
-				const list = data.records || [];
-				this.humanRecords = reset ? list : this.humanRecords.concat(list);
+				const list = this.sortRecordsByTime(data.records || []);
+				this.humanRecords = this.sortRecordsByTime(reset ? list : this.humanRecords.concat(list));
 				this.humanPage = data.page;
 				this.humanTotal = data.total;
 				this.humanHasMore = !!data.hasMore;
@@ -674,12 +870,8 @@ export default {
 					page,
 					pageSize: 10
 				});
-				const list = data.records || [];
-				if (reset) {
-					this.todayList = list;
-				} else {
-					this.todayList = this.todayList.concat(list);
-				}
+				const list = this.sortRecordsByTime(data.records || []);
+				this.todayList = this.sortRecordsByTime(reset ? list : this.todayList.concat(list));
 				this.todayPage = data.page;
 				this.todayTotal = data.total;
 				this.todayHasMore = !!data.hasMore;
@@ -707,12 +899,8 @@ export default {
 					page,
 					pageSize: 10
 				});
-				const list = data.records || [];
-				if (reset) {
-					this.depositList = list;
-				} else {
-					this.depositList = this.depositList.concat(list);
-				}
+				const list = this.sortRecordsByTime(data.records || []);
+				this.depositList = this.sortRecordsByTime(reset ? list : this.depositList.concat(list));
 				this.depositPage = data.page;
 				this.depositTotal = data.total;
 				this.depositHasMore = !!data.hasMore;
@@ -1118,8 +1306,11 @@ export default {
 		recordTypeText(type) {
 			return { income: '收入', expense: '支出', deposit: '存款', other: '合并' }[type] || '记录';
 		},
-		recordIcon(type) {
-			return { income: '入', expense: '支', deposit: '存' }[type] || '记';
+		recordIconType(type) {
+			return { income: 'download-filled', expense: 'upload-filled', deposit: 'wallet-filled' }[type] || 'compose';
+		},
+		recordIconColor(type) {
+			return { income: '#12b76a', expense: '#c8171d', deposit: '#2563eb' }[type] || '#667085';
 		},
 		recordDisplayName(record) {
 			return record.name || record.note || this.recordTypeText(record.type);
@@ -1134,7 +1325,7 @@ export default {
 <style>
 .page {
 	min-height: 100vh;
-	background: #f8f8f8;
+	background: #f5f7fb;
 	color: #101828;
 }
 
@@ -1159,15 +1350,15 @@ export default {
 	align-items: center;
 	justify-content: center;
 	padding: 40rpx;
-	background: #f5f1ee;
+	background: #eef5ff;
 }
 
 .auth-card,
 .panel,
 .modal {
 	background: #ffffff;
-	border-radius: 28rpx;
-	box-shadow: 0 20rpx 60rpx rgba(16, 24, 40, 0.08);
+	border-radius: 16rpx;
+	box-shadow: 0 18rpx 48rpx rgba(16, 24, 40, 0.08);
 }
 
 .auth-card {
@@ -1177,7 +1368,7 @@ export default {
 }
 
 .brand {
-	color: #7a6a63;
+	color: #2563eb;
 	font-size: 26rpx;
 	margin-bottom: 24rpx;
 }
@@ -1216,9 +1407,9 @@ export default {
 }
 
 .primary-btn {
-	background: #282321;
+	background: #2563eb;
 	color: #ffffff;
-	border-radius: 18rpx;
+	border-radius: 16rpx;
 }
 
 .app-shell {
@@ -1227,15 +1418,18 @@ export default {
 
 .content {
 	height: 100vh;
-	padding: 12rpx 12rpx 160rpx;
+	padding: 18rpx 18rpx 160rpx;
 	box-sizing: border-box;
 }
 
 .hero-card {
-	padding: 28rpx 32rpx;
-	border-radius: 20rpx;
-	background: #282321;
+	position: relative;
+	overflow: hidden;
+	padding: 30rpx 32rpx;
+	border-radius: 16rpx;
+	background: linear-gradient(135deg, #172554 0%, #2563eb 56%, #12b76a 100%);
 	color: #ffffff;
+	box-shadow: 0 18rpx 42rpx rgba(37, 99, 235, 0.24);
 }
 
 .section-header,
@@ -1253,7 +1447,28 @@ export default {
 	justify-content: space-between;
 }
 
+.hero-top,
+.hero-date,
+.hero-metrics,
+.summary-label,
+.section-title-icon,
+.refresh,
+.add-record-btn,
+.chart-pill,
+.daily-total-row {
+	display: flex;
+	align-items: center;
+}
+
+.hero-top {
+	position: relative;
+	z-index: 1;
+	justify-content: space-between;
+	gap: 20rpx;
+}
+
 .hero-date {
+	gap: 10rpx;
 	font-size: 34rpx;
 	font-weight: 700;
 }
@@ -1268,17 +1483,54 @@ export default {
 	margin-top: 12rpx;
 	font-size: 56rpx;
 	font-weight: 800;
-	letter-spacing: 1rpx;
+	position: relative;
+	z-index: 1;
 }
 
 .hero-profit-loss {
-	color: #c8171d;
+	color: #fecaca;
+}
+
+.hero-chip {
+	position: relative;
+	z-index: 1;
+	padding: 10rpx 18rpx;
+	border-radius: 999rpx;
+	background: rgba(255, 255, 255, 0.18);
+	font-size: 24rpx;
+	font-weight: 700;
+}
+
+.hero-metrics {
+	position: relative;
+	z-index: 1;
+	gap: 16rpx;
+	margin-top: 26rpx;
+}
+
+.hero-metrics view {
+	flex: 1;
+	padding: 18rpx 20rpx;
+	border-radius: 16rpx;
+	background: rgba(255, 255, 255, 0.14);
+}
+
+.hero-metrics text {
+	display: block;
+	color: rgba(255, 255, 255, 0.72);
+	font-size: 22rpx;
+}
+
+.hero-metrics strong {
+	display: block;
+	margin-top: 8rpx;
+	font-size: 30rpx;
 }
 
 .panel {
 	margin-top: 22rpx;
 	padding: 28rpx;
-	box-shadow: none;
+	box-shadow: 0 12rpx 32rpx rgba(16, 24, 40, 0.06);
 }
 
 .section-title {
@@ -1287,7 +1539,16 @@ export default {
 	margin-bottom: 18rpx;
 }
 
+.section-title-icon {
+	gap: 10rpx;
+}
+
+.compact-header {
+	margin-bottom: 22rpx;
+}
+
 .refresh {
+	gap: 6rpx;
 	color: #667085;
 	font-size: 24rpx;
 }
@@ -1322,7 +1583,7 @@ export default {
 .date-picker-value {
 	min-width: 220rpx;
 	text-align: center;
-	background: #282321;
+	background: #2563eb;
 	color: #ffffff;
 	font-weight: 700;
 }
@@ -1333,11 +1594,20 @@ export default {
 }
 
 .add-record-btn {
+	gap: 6rpx;
 	padding: 12rpx 22rpx;
 	border-radius: 999rpx;
 	background: #282321;
 	color: #ffffff;
 	font-size: 24rpx;
+}
+
+.add-record-btn-blue {
+	background: #2563eb;
+}
+
+.add-record-btn-amber {
+	background: #f79009;
 }
 
 .summary-strip {
@@ -1348,7 +1618,7 @@ export default {
 .summary-strip view {
 	flex: 1;
 	padding: 22rpx;
-	border-radius: 18rpx;
+	border-radius: 16rpx;
 	background: #f7f7f7;
 }
 
@@ -1368,14 +1638,27 @@ export default {
 
 .summary-card {
 	padding: 22rpx;
-	border-radius: 18rpx;
-	background: #f7f7f7;
+	border-radius: 16rpx;
+	background: #f8fafc;
+	border: 1px solid #edf2f7;
+}
+
+.summary-label {
+	gap: 8rpx;
 }
 
 .pie-section {
 	margin-top: 28rpx;
 	padding-top: 26rpx;
 	border-top: 1px solid #f0f0f0;
+}
+
+.chart-section {
+	margin-top: 28rpx;
+	padding: 24rpx;
+	border-radius: 16rpx;
+	background: #f8fafc;
+	border: 1px solid #edf2f7;
 }
 
 .chart-header {
@@ -1400,6 +1683,45 @@ export default {
 
 .chart-empty {
 	padding: 40rpx 0 22rpx;
+}
+
+.chart-pill {
+	flex-shrink: 0;
+	gap: 6rpx;
+	padding: 8rpx 16rpx;
+	border-radius: 999rpx;
+	background: #eff6ff;
+	color: #2563eb;
+	font-size: 22rpx;
+}
+
+.daily-chart-card {
+	height: 360rpx;
+	margin-top: 8rpx;
+}
+
+.daily-total-row {
+	gap: 16rpx;
+	margin-top: 20rpx;
+}
+
+.daily-total-row view {
+	flex: 1;
+	padding: 18rpx;
+	border-radius: 16rpx;
+	background: #ffffff;
+	border: 1px solid #edf2f7;
+}
+
+.daily-total-row text {
+	color: #667085;
+	font-size: 22rpx;
+}
+
+.daily-total-row strong {
+	display: block;
+	margin-top: 8rpx;
+	font-size: 28rpx;
 }
 
 .pie-layout {
@@ -1481,7 +1803,7 @@ export default {
 }
 
 .period-tabs .active {
-	background: #282321;
+	background: #2563eb;
 	color: #ffffff;
 }
 
@@ -1496,6 +1818,7 @@ export default {
 .record-item {
 	min-height: 116rpx;
 	border-bottom: 1px solid #f0f0f0;
+	gap: 16rpx;
 }
 
 .friend-item {
@@ -1544,8 +1867,31 @@ export default {
 	z-index: 1;
 }
 
+.record-dot-income {
+	background: #ecfdf3;
+	border-color: #abefc6;
+}
+
+.record-dot-expense {
+	background: #fff1f3;
+	border-color: #fecdd6;
+}
+
+.record-dot-deposit,
+.record-dot-friend {
+	background: #eff6ff;
+	border-color: #bfdbfe;
+}
+
+.compact-dot {
+	width: 64rpx;
+	height: 64rpx;
+	flex-shrink: 0;
+}
+
 .record-main {
 	flex: 1;
+	min-width: 0;
 }
 
 .record-name {
@@ -1555,6 +1901,7 @@ export default {
 
 .record-side {
 	text-align: right;
+	flex-shrink: 0;
 }
 
 .record-amount {

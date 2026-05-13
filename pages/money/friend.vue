@@ -1,27 +1,42 @@
 <template>
 	<view class="page">
 		<view class="header">
-			<view class="title">{{ friendName || '朋友详情' }}</view>
+			<view class="title">
+				<uni-icons type="person-filled" size="24" color="#2563eb"></uni-icons>
+				<text>{{ friendName || '朋友详情' }}</text>
+			</view>
 			<view class="subtitle">与该朋友的人情收支记录</view>
 		</view>
 		<view class="summary">
 			<view class="card">
-				<text>收礼</text>
+				<view class="card-label">
+					<uni-icons type="gift-filled" size="16" color="#12b76a"></uni-icons>
+					<text>收礼</text>
+				</view>
 				<strong>{{ formatMoney(summary.income) }}</strong>
 			</view>
 			<view class="card">
-				<text>送礼</text>
+				<view class="card-label">
+					<uni-icons type="paperplane-filled" size="16" color="#c8171d"></uni-icons>
+					<text>送礼</text>
+				</view>
 				<strong class="danger">{{ formatMoney(summary.expense) }}</strong>
 			</view>
 			<view class="card">
-				<text>净额</text>
+				<view class="card-label">
+					<uni-icons type="flag-filled" size="16" color="#f79009"></uni-icons>
+					<text>净额</text>
+				</view>
 				<strong>{{ formatMoney(summary.net, true) }}</strong>
 			</view>
 		</view>
 		<view v-if="!records.length && !loading" class="empty">暂无记录</view>
 		<view v-else class="list">
 			<view v-for="item in records" :key="item._id" class="row">
-				<view>
+				<view :class="['row-icon', item.type === 'human_expense' ? 'expense-icon' : 'income-icon']">
+					<uni-icons type="gift-filled" size="17" :color="item.type === 'human_expense' ? '#c8171d' : '#12b76a'"></uni-icons>
+				</view>
+				<view class="row-main">
 					<view class="name">{{ item.type === 'human_income' ? '收礼' : '送礼' }}</view>
 					<view class="time">{{ shortDate(item.occurred_at) }}{{ item.note ? ' · ' + item.note : '' }}</view>
 				</view>
@@ -79,8 +94,8 @@ export default {
 			this.loading = true;
 			try {
 				const data = await this.callMoney('listHumanRecords', { friendId: this.friendId, page, pageSize: 10 });
-				const list = data.records || [];
-				this.records = reset ? list : this.records.concat(list);
+				const list = this.sortRecordsByTime(data.records || []);
+				this.records = this.sortRecordsByTime(reset ? list : this.records.concat(list));
 				this.page = data.page || page;
 				this.hasMore = !!data.hasMore;
 				this.summary = this.records.reduce(
@@ -97,6 +112,15 @@ export default {
 			} finally {
 				this.loading = false;
 			}
+		},
+		sortRecordsByTime(records = []) {
+			return records.slice().sort((a, b) => {
+				const occurredDiff = Number(b.occurred_at || 0) - Number(a.occurred_at || 0);
+				if (occurredDiff) return occurredDiff;
+				const createdDiff = Number(b.created_at || 0) - Number(a.created_at || 0);
+				if (createdDiff) return createdDiff;
+				return String(b._id || '').localeCompare(String(a._id || ''));
+			});
 		},
 		shortDate(timestamp) {
 			const date = new Date(Number(timestamp || Date.now()));
@@ -116,19 +140,133 @@ export default {
 </script>
 
 <style>
-.page { min-height: 100vh; background: #f8f8f8; padding: 20rpx; }
-.header { margin-bottom: 18rpx; }
-.title { font-size: 36rpx; font-weight: 700; }
-.subtitle { margin-top: 8rpx; color: #667085; font-size: 24rpx; }
-.summary { display: flex; gap: 12rpx; margin-bottom: 16rpx; }
-.card { flex: 1; background: #fff; border-radius: 14rpx; padding: 18rpx; }
-.card text { color: #667085; font-size: 22rpx; }
-.card strong { display: block; margin-top: 8rpx; font-size: 30rpx; }
-.list { background: #fff; border-radius: 14rpx; padding: 0 18rpx; }
-.row { min-height: 110rpx; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f0f0f0; }
-.name { font-size: 30rpx; font-weight: 600; }
-.time { margin-top: 6rpx; color: #667085; font-size: 24rpx; }
-.amount { font-size: 30rpx; font-weight: 700; }
-.danger { color: #c8171d; }
-.more, .empty { text-align: center; color: #667085; padding: 26rpx 0; }
+.page {
+	min-height: 100vh;
+	background: #f5f7fb;
+	padding: 22rpx;
+	box-sizing: border-box;
+}
+
+.header {
+	margin-bottom: 20rpx;
+	padding: 26rpx;
+	border-radius: 16rpx;
+	background: #ffffff;
+	box-shadow: 0 12rpx 32rpx rgba(16, 24, 40, 0.06);
+}
+
+.title,
+.card-label,
+.row {
+	display: flex;
+	align-items: center;
+}
+
+.title {
+	gap: 10rpx;
+	font-size: 36rpx;
+	font-weight: 800;
+}
+
+.subtitle {
+	margin-top: 10rpx;
+	color: #667085;
+	font-size: 24rpx;
+}
+
+.summary {
+	display: flex;
+	gap: 12rpx;
+	margin-bottom: 18rpx;
+}
+
+.card {
+	flex: 1;
+	background: #ffffff;
+	border-radius: 16rpx;
+	padding: 18rpx;
+	border: 1px solid #edf2f7;
+}
+
+.card-label {
+	gap: 6rpx;
+}
+
+.card text {
+	color: #667085;
+	font-size: 22rpx;
+}
+
+.card strong {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 30rpx;
+}
+
+.list {
+	background: #ffffff;
+	border-radius: 16rpx;
+	padding: 0 18rpx;
+	box-shadow: 0 10rpx 28rpx rgba(16, 24, 40, 0.05);
+}
+
+.row {
+	min-height: 112rpx;
+	gap: 16rpx;
+	justify-content: space-between;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.row-icon {
+	width: 64rpx;
+	height: 64rpx;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.income-icon {
+	background: #ecfdf3;
+	border: 1px solid #abefc6;
+}
+
+.expense-icon {
+	background: #fff1f3;
+	border: 1px solid #fecdd6;
+}
+
+.row-main {
+	flex: 1;
+	min-width: 0;
+}
+
+.name {
+	font-size: 30rpx;
+	font-weight: 700;
+}
+
+.time {
+	margin-top: 6rpx;
+	color: #667085;
+	font-size: 24rpx;
+}
+
+.amount {
+	font-size: 30rpx;
+	font-weight: 800;
+	flex-shrink: 0;
+}
+
+.danger {
+	color: #c8171d;
+}
+
+.more,
+.empty {
+	text-align: center;
+	color: #667085;
+	padding: 34rpx 0;
+}
 </style>
