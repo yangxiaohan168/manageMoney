@@ -44,7 +44,7 @@
 					<view :class="['hero-profit-amount', cycleNet < 0 ? 'hero-profit-loss' : '']">
 						<text>{{ formatMoney(cycleNet, true) }}</text>
 						<text v-if="periodAdvance > 0" class="advance-minus">-{{ formatMoney(periodAdvance) }}</text>
-						<text v-if="periodAdvance > 0" class="advance-after">= {{ formatMoney(cycleNetAfterAdvance, true) }}</text>
+						<text v-if="periodAdvance > 0" :class="['advance-after', advanceAfterToneClass]">= {{ formatMoney(cycleNetAfterAdvance, true) }}</text>
 					</view>
 					<view class="hero-metrics">
 						<view>
@@ -199,7 +199,7 @@
 							<strong>
 								{{ formatMoney(cycleNet, true) }}
 								<text v-if="periodAdvance > 0" class="summary-advance-minus">-{{ formatMoney(periodAdvance) }}</text>
-								<text v-if="periodAdvance > 0" class="summary-advance-after">= {{ formatMoney(cycleNetAfterAdvance, true) }}</text>
+								<text v-if="periodAdvance > 0" :class="['summary-advance-after', advanceAfterToneClass]">= {{ formatMoney(cycleNetAfterAdvance, true) }}</text>
 							</strong>
 						</view>
 					</view>
@@ -286,7 +286,7 @@
 										<view class="record-note">存款{{ record.note ? ' · ' + record.note : '' }}</view>
 									</view>
 									<view class="record-side">
-										<view class="record-amount">{{ recordAmountText(record) }}</view>
+										<view class="record-amount danger-text">+{{ formatMoney(record.amount) }}</view>
 										<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
 									</view>
 								</view>
@@ -313,7 +313,7 @@
 							</view>
 						</view>
 					</view>
-					<view class="period-tabs">
+					<view class="detail-tabs human-tabs">
 						<text :class="{ active: humanSubTab === 'records' }" @click="humanSubTab = 'records'">收支记录</text>
 						<text :class="{ active: humanSubTab === 'friends' }" @click="humanSubTab = 'friends'">朋友管理</text>
 					</view>
@@ -591,6 +591,11 @@ export default {
 		},
 		cycleNetAfterAdvance() {
 			return this.cycleNet - this.periodAdvance;
+		},
+		advanceAfterToneClass() {
+			if (this.cycleNetAfterAdvance > 0) return 'positive-text';
+			if (this.cycleNetAfterAdvance < 0) return 'danger-text';
+			return 'neutral-text';
 		},
 		recordModalTitle() {
 			if (this.convertingAdvanceId) return '转为实际支出';
@@ -1618,7 +1623,6 @@ export default {
 }
 
 .advance-after {
-	color: #ffffff;
 	font-size: 34rpx;
 	font-weight: 700;
 	white-space: nowrap;
@@ -1750,7 +1754,6 @@ export default {
 
 .summary-advance-after {
 	margin-left: 8rpx;
-	color: #101828;
 	font-size: 24rpx;
 	font-weight: 700;
 	white-space: nowrap;
@@ -1800,6 +1803,10 @@ export default {
 	box-shadow: 0 8rpx 18rpx rgba(16, 24, 40, 0.08);
 }
 
+.human-tabs {
+	margin: 18rpx 0;
+}
+
 .chart-section {
 	margin-top: 28rpx;
 	padding-top: 26rpx;
@@ -1833,27 +1840,16 @@ export default {
 	height: 360rpx;
 }
 
-.period-tabs {
-	margin: 22rpx 0;
-}
-
-.period-tabs text {
-	flex: 1;
-	text-align: center;
-	padding: 16rpx 0;
-	border-radius: 999rpx;
-	background: #f2f4f7;
-	color: #667085;
-	font-size: 26rpx;
-}
-
-.period-tabs .active {
-	background: #282321;
-	color: #ffffff;
-}
-
 .danger-text {
 	color: #c8171d !important;
+}
+
+.positive-text {
+	color: #12b76a !important;
+}
+
+.neutral-text {
+	color: #98a2b3 !important;
 }
 
 .timeline {
