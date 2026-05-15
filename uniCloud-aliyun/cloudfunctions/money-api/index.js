@@ -195,7 +195,7 @@ async function updateBookConfig(payload = {}) {
 
 async function createRecord(payload = {}) {
 	const type = payload.type;
-	if (!['income', 'expense', 'deposit'].includes(type)) {
+	if (!['income', 'expense', 'deposit', 'advance'].includes(type)) {
 		return fail('记录类型不正确');
 	}
 	const name = String(payload.name || '').trim();
@@ -228,7 +228,7 @@ async function updateRecord(payload = {}) {
 	const id = String(payload.id || '').trim();
 	if (!id) return fail('记录ID不能为空');
 	const type = payload.type;
-	if (!['income', 'expense', 'deposit'].includes(type)) {
+	if (!['income', 'expense', 'deposit', 'advance'].includes(type)) {
 		return fail('记录类型不正确');
 	}
 	const name = String(payload.name || '').trim();
@@ -618,6 +618,7 @@ async function getSummary(payload = {}) {
 		periodIncome: 0,
 		periodExpense: 0,
 		periodDeposit: 0,
+		periodAdvance: 0,
 		periodNet: 0
 	};
 
@@ -647,10 +648,11 @@ async function getSummary(payload = {}) {
 				})
 				.end();
 
-		const [incRes, expRes, depRes, humanIncome, humanExpense] = await Promise.all([
+		const [incRes, expRes, depRes, advanceRes, humanIncome, humanExpense] = await Promise.all([
 			sumType('income'),
 			sumType('expense'),
 			sumType('deposit'),
+			sumType('advance'),
 			sumHumanRecordsByTypeAndRange('human_income', startAt, endAt),
 			sumHumanRecordsByTypeAndRange('human_expense', startAt, endAt)
 		]);
@@ -662,6 +664,7 @@ async function getSummary(payload = {}) {
 		totals.periodIncome = pick(incRes) + humanIncome;
 		totals.periodExpense = pick(expRes) + humanExpense + pick(depRes);
 		totals.periodDeposit = pick(depRes);
+		totals.periodAdvance = pick(advanceRes);
 
 		if (includeNameStats) {
 			const statsRes = await recordsCollection

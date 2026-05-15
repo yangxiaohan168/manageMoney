@@ -42,7 +42,8 @@
 						</picker>
 					</view>
 					<view :class="['hero-profit-amount', cycleNet < 0 ? 'hero-profit-loss' : '']">
-						{{ formatMoney(cycleNet, true) }}
+						<text>{{ formatMoney(cycleNet, true) }}</text>
+						<text v-if="periodAdvance > 0" class="advance-minus">-{{ formatMoney(periodAdvance) }}</text>
 					</view>
 					<view class="hero-metrics">
 						<view>
@@ -75,11 +76,20 @@
 								<uni-icons type="download-filled" size="15" color="#ffffff"></uni-icons>
 								<text>收入</text>
 							</view>
+							<view class="add-record-btn add-record-btn-muted" @click="openRecordForm('advance')">
+								<uni-icons type="compose" size="15" color="#ffffff"></uni-icons>
+								<text>预支</text>
+							</view>
 						</view>
 					</view>
 
-					<view v-if="!monthlyEntries.length && !monthlyLoading" class="empty">这个周期还没有记录。</view>
-					<view v-else-if="monthlyEntries.length" class="timeline">
+					<view class="detail-tabs">
+						<text :class="{ active: monthlySubTab === 'regular' }" @click="switchMonthlySubTab('regular')">收支明细</text>
+						<text :class="{ active: monthlySubTab === 'advance' }" @click="switchMonthlySubTab('advance')">预支明细</text>
+					</view>
+
+					<view v-if="monthlySubTab === 'regular' && !monthlyEntries.length && !monthlyLoading" class="empty">这个周期还没有收支记录。</view>
+					<view v-else-if="monthlySubTab === 'regular' && monthlyEntries.length" class="timeline">
 						<uni-swipe-action>
 							<uni-swipe-action-item
 								v-for="(entry, index) in monthlyEntries"
@@ -113,7 +123,42 @@
 							<text v-else>加载更多（{{ monthlyEntries.length }}/{{ monthlyTotal }}）</text>
 						</view>
 					</view>
-					<view v-else-if="monthlyLoading" class="empty">加载中...</view>
+					<view v-else-if="monthlySubTab === 'regular' && monthlyLoading" class="empty">加载中...</view>
+
+					<view v-if="monthlySubTab === 'advance' && !advanceEntries.length && !advanceLoading" class="empty">这个周期还没有预支记录。</view>
+					<view v-else-if="monthlySubTab === 'advance' && advanceEntries.length" class="timeline">
+						<uni-swipe-action>
+							<uni-swipe-action-item
+								v-for="(entry, index) in advanceEntries"
+								:key="'advance-' + entry._id"
+								:right-options="recordActionOptions"
+								@click="onRecordActionClick($event, entry)"
+							>
+								<view class="record-item">
+									<view class="record-node">
+										<view v-if="index !== 0" class="node-line top-line"></view>
+										<view class="record-dot record-dot-advance">
+											<uni-icons type="compose" size="18" color="#667085"></uni-icons>
+										</view>
+										<view v-if="index !== advanceEntries.length - 1" class="node-line bottom-line"></view>
+									</view>
+									<view class="record-main">
+										<view class="record-name">{{ entryDisplayName(entry) }}</view>
+										<view class="record-note">预支{{ entry.note ? ' · ' + entry.note : '' }}</view>
+									</view>
+									<view class="record-side">
+										<view class="record-amount advance-text">-{{ formatMoney(entry.amount) }}</view>
+										<view class="record-time">{{ shortDate(entry.occurred_at) }}</view>
+									</view>
+								</view>
+							</uni-swipe-action-item>
+						</uni-swipe-action>
+						<view v-if="advanceHasMore" class="load-more" @click="fetchAdvanceEntries(false)">
+							<text v-if="advanceLoading">加载中...</text>
+							<text v-else>加载更多（{{ advanceEntries.length }}/{{ advanceTotal }}）</text>
+						</view>
+					</view>
+					<view v-else-if="monthlySubTab === 'advance' && advanceLoading" class="empty">加载中...</view>
 				</view>
 
 				<view v-else-if="activeTab === 'stats'" class="panel stats-panel">
@@ -150,7 +195,10 @@
 								<uni-icons type="flag-filled" size="16" color="#f79009"></uni-icons>
 								<text>剩余经费</text>
 							</view>
-							<strong>{{ formatMoney(cycleNet, true) }}</strong>
+							<strong>
+								{{ formatMoney(cycleNet, true) }}
+								<text v-if="periodAdvance > 0" class="summary-advance-minus">-{{ formatMoney(periodAdvance) }}</text>
+							</strong>
 						</view>
 					</view>
 
@@ -369,11 +417,11 @@
 		<view v-if="showRecordForm" class="modal-mask">
 			<view class="modal">
 				<view class="modal-title">{{ editingRecordId ? '编辑记录' : '新建记录' }}</view>
-				<view v-if="recordForm.type !== 'deposit'" class="type-tabs">
+				<view v-if="recordForm.type !== 'deposit' && recordForm.type !== 'advance'" class="type-tabs">
 					<text :class="{ active: recordForm.type === 'income' }" @click="recordForm.type = 'income'">收入</text>
 					<text :class="{ active: recordForm.type === 'expense' }" @click="recordForm.type = 'expense'">支出</text>
 				</view>
-				<view v-else class="deposit-form-tip">新建存款</view>
+				<view v-else class="deposit-form-tip">{{ recordForm.type === 'deposit' ? '存款记录' : '预支记录' }}</view>
 				<input class="input" v-model="recordForm.name" placeholder="记录名，如 工资 / 房租 / 买菜" />
 				<input class="input" type="digit" v-model="recordForm.amount" placeholder="金额，如 12.5" />
 				<picker mode="date" :value="recordForm.occurredDate" @change="recordForm.occurredDate = $event.detail.value">
@@ -444,6 +492,7 @@ export default {
 			passwordInput: '',
 			confirmPasswordInput: '',
 			activeTab: 'month',
+			monthlySubTab: 'regular',
 			selectedCycleMonth: '',
 			cycleStartDay: DEFAULT_CYCLE_START_DAY,
 			summary: this.getEmptySummary(),
@@ -452,6 +501,11 @@ export default {
 			monthlyTotal: 0,
 			monthlyHasMore: false,
 			monthlyLoading: false,
+			advanceEntries: [],
+			advancePage: 1,
+			advanceTotal: 0,
+			advanceHasMore: false,
+			advanceLoading: false,
 			depositStats: [],
 			recentExpenseStats: [],
 			depositList: [],
@@ -523,6 +577,10 @@ export default {
 			if (!totals) return 0;
 			return Number(totals.periodNet || 0);
 		},
+		periodAdvance() {
+			const totals = this.summary && this.summary.totals;
+			return Number((totals && totals.periodAdvance) || 0);
+		},
 		monthlyDepositChartData() {
 			return {
 				categories: this.depositStats.map((item) => item.label),
@@ -593,6 +651,7 @@ export default {
 					periodIncome: 0,
 					periodExpense: 0,
 					periodDeposit: 0,
+					periodAdvance: 0,
 					periodNet: 0
 				}
 			};
@@ -737,6 +796,7 @@ export default {
 			await Promise.all([
 				this.loadSummary(),
 				this.fetchMonthlyEntries(true),
+				this.fetchAdvanceEntries(true),
 				this.loadTrendStats()
 			]);
 		},
@@ -787,6 +847,38 @@ export default {
 				uni.showToast({ title: e.message, icon: 'none' });
 			} finally {
 				this.monthlyLoading = false;
+			}
+		},
+		async fetchAdvanceEntries(reset) {
+			if (this.advanceLoading) return;
+			if (reset) {
+				this.advancePage = 1;
+				this.advanceEntries = [];
+				this.advanceHasMore = false;
+				this.advanceTotal = 0;
+			} else if (!this.advanceHasMore) {
+				return;
+			}
+			const page = reset ? 1 : this.advancePage + 1;
+			this.advanceLoading = true;
+			try {
+				const range = this.cycleRange;
+				const data = await this.callMoney('listRecords', {
+					types: ['advance'],
+					startAt: range.startAt,
+					endAt: range.endAt,
+					page,
+					pageSize: 10
+				});
+				const list = this.sortRecordsByTime(data.records || []);
+				this.advanceEntries = this.sortRecordsByTime(reset ? list : this.advanceEntries.concat(list));
+				this.advancePage = data.page;
+				this.advanceTotal = data.total;
+				this.advanceHasMore = !!data.hasMore;
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.advanceLoading = false;
 			}
 		},
 		async loadHumanSummary() {
@@ -1083,6 +1175,9 @@ export default {
 		switchTab(tab) {
 			this.activeTab = tab;
 		},
+		switchMonthlySubTab(tab) {
+			this.monthlySubTab = tab;
+		},
 		async changeSelectedCycleMonth(e) {
 			const value = e && e.detail ? e.detail.value : '';
 			if (!value) return;
@@ -1248,6 +1343,9 @@ export default {
 		isExpenseEntry(entry) {
 			return ['expense', 'human_expense', 'deposit'].includes(entry.type);
 		},
+		isAdvanceEntry(entry) {
+			return entry && entry.type === 'advance';
+		},
 		entryDisplayName(entry) {
 			if (entry.source === 'human') return entry.friend_name || entry.name || '人情记录';
 			return entry.name || '未命名';
@@ -1257,34 +1355,37 @@ export default {
 				income: '收入',
 				expense: '支出',
 				deposit: '存款',
+				advance: '预支',
 				human_income: '收礼',
 				human_expense: '送礼'
 			};
 			return map[entry.type] || '记录';
 		},
 		entryAmountText(entry) {
-			const prefix = this.isExpenseEntry(entry) ? '-' : '+';
+			const prefix = this.isExpenseEntry(entry) || this.isAdvanceEntry(entry) ? '-' : '+';
 			return `${prefix}${this.formatMoney(entry.amount)}`;
 		},
 		entryToneClass(entry) {
 			if (['income', 'human_income'].includes(entry.type)) return 'record-dot-income';
 			if (['expense', 'human_expense'].includes(entry.type)) return 'record-dot-expense';
+			if (entry.type === 'advance') return 'record-dot-advance';
 			return 'record-dot-deposit';
 		},
 		entryIconType(entry) {
 			if (entry.source === 'human') return 'gift-filled';
-			return { income: 'download-filled', expense: 'upload-filled', deposit: 'wallet-filled' }[entry.type] || 'compose';
+			return { income: 'download-filled', expense: 'upload-filled', deposit: 'wallet-filled', advance: 'compose' }[entry.type] || 'compose';
 		},
 		entryIconColor(entry) {
 			if (['income', 'human_income'].includes(entry.type)) return '#12b76a';
 			if (['expense', 'human_expense'].includes(entry.type)) return '#c8171d';
+			if (entry.type === 'advance') return '#667085';
 			return '#2563eb';
 		},
 		recordDisplayName(record) {
 			return record.name || '未命名';
 		},
 		recordAmountText(record) {
-			const prefix = record.type === 'expense' ? '-' : '+';
+			const prefix = ['expense', 'deposit', 'advance'].includes(record.type) ? '-' : '+';
 			return `${prefix}${this.formatMoney(record.amount)}`;
 		}
 	}
@@ -1447,10 +1548,21 @@ export default {
 	font-size: 58rpx;
 	font-weight: 800;
 	letter-spacing: 0;
+	display: flex;
+	align-items: baseline;
+	gap: 14rpx;
+	flex-wrap: wrap;
 }
 
 .hero-profit-loss {
 	color: #ffccd5;
+}
+
+.advance-minus {
+	color: rgba(255, 255, 255, 0.46);
+	font-size: 34rpx;
+	font-weight: 700;
+	white-space: nowrap;
 }
 
 .hero-metrics {
@@ -1538,6 +1650,10 @@ export default {
 	background: #087443;
 }
 
+.add-record-btn-muted {
+	background: #667085;
+}
+
 .add-record-btn-blue {
 	background: #2563eb;
 }
@@ -1565,6 +1681,14 @@ export default {
 	font-size: 30rpx;
 }
 
+.summary-advance-minus {
+	margin-left: 10rpx;
+	color: #98a2b3;
+	font-size: 24rpx;
+	font-weight: 700;
+	white-space: nowrap;
+}
+
 .summary-grid {
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);
@@ -1581,6 +1705,32 @@ export default {
 
 .summary-label {
 	gap: 8rpx;
+}
+
+.detail-tabs {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 10rpx;
+	margin: 18rpx 0 8rpx;
+	padding: 8rpx;
+	border-radius: 18rpx;
+	background: #f2f4f7;
+}
+
+.detail-tabs text {
+	height: 58rpx;
+	line-height: 58rpx;
+	border-radius: 14rpx;
+	text-align: center;
+	color: #667085;
+	font-size: 24rpx;
+	font-weight: 700;
+}
+
+.detail-tabs .active {
+	background: #ffffff;
+	color: #282321;
+	box-shadow: 0 8rpx 18rpx rgba(16, 24, 40, 0.08);
 }
 
 .chart-section {
@@ -1722,6 +1872,11 @@ export default {
 	border-color: #bfdbfe;
 }
 
+.record-dot-advance {
+	background: #f2f4f7;
+	border-color: #d0d5dd;
+}
+
 .compact-dot {
 	width: 64rpx;
 	height: 64rpx;
@@ -1751,6 +1906,10 @@ export default {
 .record-amount {
 	font-size: 32rpx;
 	font-weight: 800;
+}
+
+.advance-text {
+	color: #98a2b3;
 }
 
 .bottom-tabbar {

@@ -26,6 +26,10 @@
 				{
 					"text": "存款",
 					"value": "deposit"
+				},
+				{
+					"text": "预支",
+					"value": "advance"
 				}
 			]
 		},
