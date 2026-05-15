@@ -27,6 +27,17 @@
 			"bsonType": "int",
 			"description": "令牌版本"
 		},
+		"cycle_start_day": {
+			"bsonType": "int",
+			"title": "月账起始日",
+			"minimum": 1,
+			"maximum": 31
+		},
+		"salary_amount": {
+			"bsonType": "int",
+			"title": "工资金额，单位分",
+			"minimum": 1
+		},
 		"created_at": {
 			"bsonType": "timestamp",
 			"description": "创建时间"

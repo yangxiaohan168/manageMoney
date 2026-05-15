@@ -9,6 +9,8 @@ const friendsCollection = db.collection('money-friends');
 
 const SETTINGS_KEY = 'default';
 const TOKEN_MAX_AGE = 1000 * 60 * 60 * 24 * 30;
+const DEFAULT_CYCLE_START_DAY = 5;
+const DEFAULT_SALARY_AMOUNT = 927000;
 
 function ok(data = {}, msg = 'ok') {
 	return { code: 0, msg, data };
@@ -32,6 +34,21 @@ function normalizeAmountToCents(amount) {
 		throw new Error('金额至少 0.01');
 	}
 	return cents;
+}
+
+function normalizeCycleStartDay(value) {
+	const day = Math.round(Number(value || DEFAULT_CYCLE_START_DAY));
+	if (!Number.isFinite(day) || day < 1 || day > 31) {
+		throw new Error('月起始日必须是 1-31');
+	}
+	return day;
+}
+
+function getConfigFromSetting(setting = {}) {
+	return {
+		cycleStartDay: normalizeCycleStartDay(setting.cycle_start_day || DEFAULT_CYCLE_START_DAY),
+		salaryAmount: Number(setting.salary_amount || DEFAULT_SALARY_AMOUNT)
+	};
 }
 
 function hashPassword(password, salt) {
@@ -113,6 +130,8 @@ async function setupPassword(payload = {}) {
 		password_hash: hashPassword(password, salt),
 		password_salt: salt,
 		token_version: 1,
+		cycle_start_day: DEFAULT_CYCLE_START_DAY,
+		salary_amount: DEFAULT_SALARY_AMOUNT,
 		created_at: createdAt,
 		updated_at: createdAt
 	};
@@ -141,6 +160,32 @@ async function verifyToken(payload = {}) {
 	const setting = await requireAuth(payload.token);
 	const tokenPayload = decodeToken(payload.token, setting);
 	return ok({ valid: true, expiresAt: tokenPayload.exp });
+}
+
+async function getBookConfig() {
+	const setting = await getSetting();
+	return ok(getConfigFromSetting(setting || {}));
+}
+
+async function updateBookConfig(payload = {}) {
+	const setting = await getSetting();
+	if (!setting || !setting._id) return fail('请先设置管理密码');
+
+	let cycleStartDay = DEFAULT_CYCLE_START_DAY;
+	let salaryAmount = DEFAULT_SALARY_AMOUNT;
+	try {
+		cycleStartDay = normalizeCycleStartDay(payload.cycleStartDay);
+		salaryAmount = normalizeAmountToCents(payload.salaryAmount);
+	} catch (e) {
+		return fail(e.message);
+	}
+
+	await settingsCollection.doc(setting._id).update({
+		cycle_start_day: cycleStartDay,
+		salary_amount: salaryAmount,
+		updated_at: now()
+	});
+	return ok({ cycleStartDay, salaryAmount });
 }
 
 async function createRecord(payload = {}) {
@@ -401,9 +446,128 @@ async function sumRecordsByTypeAndRange(type, startAt, endAt) {
 	return row ? Number(row.sum || 0) : 0;
 }
 
+async function sumHumanRecordsByTypeAndRange(type, startAt, endAt) {
+	const $ = db.command.aggregate;
+	const _ = db.command;
+	const res = await humanRecordsCollection
+		.aggregate()
+		.match({
+			type,
+			occurred_at: _.gte(startAt).and(_.lt(endAt))
+		})
+		.group({
+			_id: null,
+			sum: $.sum('$amount')
+		})
+		.end();
+	const row = res.data && res.data[0];
+	return row ? Number(row.sum || 0) : 0;
+}
+
+function normalizeMonthlyEntry(record, source) {
+	if (source === 'human') {
+		return {
+			...record,
+			source,
+			name: record.friend_name || '人情记录'
+		};
+	}
+	return { ...record, source };
+}
+
+async function listMonthlyEntries(payload = {}) {
+	const pageSize = Math.min(Math.max(Number(payload.pageSize) || 10, 1), 50);
+	const page = Math.max(Number(payload.page) || 1, 1);
+	const skip = (page - 1) * pageSize;
+	const startAt = Number(payload.startAt || 0);
+	const endAt = Number(payload.endAt || 0);
+	if (!startAt || !endAt || endAt <= startAt) return fail('周期范围不正确');
+
+	const _ = db.command;
+	const range = { occurred_at: _.gte(startAt).and(_.lt(endAt)) };
+	const fetchLimit = skip + pageSize;
+	const recordCond = { type: _.in(['income', 'expense']), ...range };
+	const humanCond = { type: _.in(['human_income', 'human_expense']), ...range };
+
+	const [recordCountRes, humanCountRes, recordRes, humanRes] = await Promise.all([
+		recordsCollection.where(recordCond).count(),
+		humanRecordsCollection.where(humanCond).count(),
+		recordsCollection
+			.where(recordCond)
+			.orderBy('occurred_at', 'desc')
+			.orderBy('created_at', 'desc')
+			.limit(fetchLimit)
+			.get(),
+		humanRecordsCollection
+			.where(humanCond)
+			.orderBy('occurred_at', 'desc')
+			.orderBy('created_at', 'desc')
+			.limit(fetchLimit)
+			.get()
+	]);
+
+	const merged = [
+		...(recordRes.data || []).map((item) => normalizeMonthlyEntry(item, 'record')),
+		...(humanRes.data || []).map((item) => normalizeMonthlyEntry(item, 'human'))
+	].sort((a, b) => {
+		const occurredDiff = Number(b.occurred_at || 0) - Number(a.occurred_at || 0);
+		if (occurredDiff) return occurredDiff;
+		const createdDiff = Number(b.created_at || 0) - Number(a.created_at || 0);
+		if (createdDiff) return createdDiff;
+		return String(b._id || '').localeCompare(String(a._id || ''));
+	});
+
+	const total = Number(recordCountRes.total || 0) + Number(humanCountRes.total || 0);
+	const entries = merged.slice(skip, skip + pageSize);
+	return ok({ entries, records: entries, total, page, pageSize, hasMore: skip + entries.length < total });
+}
+
+async function getRangeStats(payload = {}) {
+	const ranges = Array.isArray(payload.ranges) ? payload.ranges.slice(0, 31) : [];
+	if (!ranges.length) return ok({ ranges: [] });
+
+	const normalizedRanges = ranges
+		.map((item) => {
+			const startAt = Number(item.startAt || 0);
+			const endAt = Number(item.endAt || 0);
+			return {
+				key: String(item.key || startAt),
+				label: String(item.label || ''),
+				startAt,
+				endAt
+			};
+		})
+		.filter((item) => item.startAt > 0 && item.endAt > item.startAt);
+
+	const rows = await Promise.all(
+		normalizedRanges.map(async (range) => {
+			const [income, expense, deposit, humanIncome, humanExpense] = await Promise.all([
+				sumRecordsByTypeAndRange('income', range.startAt, range.endAt),
+				sumRecordsByTypeAndRange('expense', range.startAt, range.endAt),
+				sumRecordsByTypeAndRange('deposit', range.startAt, range.endAt),
+				sumHumanRecordsByTypeAndRange('human_income', range.startAt, range.endAt),
+				sumHumanRecordsByTypeAndRange('human_expense', range.startAt, range.endAt)
+			]);
+			return {
+				...range,
+				income: income + humanIncome,
+				expense: expense + humanExpense,
+				deposit,
+				recordIncome: income,
+				recordExpense: expense,
+				humanIncome,
+				humanExpense
+			};
+		})
+	);
+
+	return ok({ ranges: rows, days: rows });
+}
+
 async function getDailyStats(payload = {}) {
 	const days = Array.isArray(payload.days) ? payload.days.slice(0, 31) : [];
 	if (!days.length) return ok({ days: [] });
+	const includeHuman = !!payload.includeHuman;
 
 	const normalizedDays = days
 		.map((item) => {
@@ -420,11 +584,13 @@ async function getDailyStats(payload = {}) {
 
 	const rows = await Promise.all(
 		normalizedDays.map(async (day) => {
-			const [income, expense] = await Promise.all([
+			const [income, expense, humanIncome, humanExpense] = await Promise.all([
 				sumRecordsByTypeAndRange('income', day.startAt, day.endAt),
-				sumRecordsByTypeAndRange('expense', day.startAt, day.endAt)
+				sumRecordsByTypeAndRange('expense', day.startAt, day.endAt),
+				includeHuman ? sumHumanRecordsByTypeAndRange('human_income', day.startAt, day.endAt) : 0,
+				includeHuman ? sumHumanRecordsByTypeAndRange('human_expense', day.startAt, day.endAt) : 0
 			]);
-			return { ...day, income, expense };
+			return { ...day, income: income + humanIncome, expense: expense + humanExpense };
 		})
 	);
 
@@ -475,18 +641,20 @@ async function getSummary(payload = {}) {
 				})
 				.end();
 
-		const [incRes, expRes, depRes] = await Promise.all([
+		const [incRes, expRes, depRes, humanIncome, humanExpense] = await Promise.all([
 			sumType('income'),
 			sumType('expense'),
-			sumType('deposit')
+			sumType('deposit'),
+			sumHumanRecordsByTypeAndRange('human_income', startAt, endAt),
+			sumHumanRecordsByTypeAndRange('human_expense', startAt, endAt)
 		]);
 
 		const pick = (res) => {
 			const row = res.data && res.data[0];
 			return row ? Number(row.sum || 0) : 0;
 		};
-		totals.periodIncome = pick(incRes);
-		totals.periodExpense = pick(expRes);
+		totals.periodIncome = pick(incRes) + humanIncome;
+		totals.periodExpense = pick(expRes) + humanExpense;
 		totals.periodDeposit = pick(depRes);
 
 		if (includeNameStats) {
@@ -550,10 +718,14 @@ exports.main = async (event = {}) => {
 
 		await requireAuth(payload.token || token);
 
+		if (action === 'getBookConfig') return await getBookConfig();
+		if (action === 'updateBookConfig') return await updateBookConfig(payload);
 		if (action === 'createRecord') return await createRecord(payload);
 		if (action === 'updateRecord') return await updateRecord(payload);
 		if (action === 'deleteRecord') return await deleteRecord(payload);
 		if (action === 'listRecords') return await listRecords(payload);
+		if (action === 'listMonthlyEntries') return await listMonthlyEntries(payload);
+		if (action === 'getRangeStats') return await getRangeStats(payload);
 		if (action === 'getDailyStats') return await getDailyStats(payload);
 		if (action === 'getSummary') return await getSummary(payload);
 		if (action === 'listFriends') return await listFriends();

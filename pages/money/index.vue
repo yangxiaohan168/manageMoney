@@ -7,7 +7,7 @@
 				<view class="brand">一起存钱</view>
 				<view class="auth-title">{{ hasPassword ? '输入管理密码' : '首次设置管理密码' }}</view>
 				<view class="auth-desc">
-					{{ hasPassword ? '本机缓存验证通过后可直接进入。' : '密码会加密存入云数据库，用于防止外人拿到链接后管理账本。' }}
+					{{ hasPassword ? '本机缓存验证通过后可直接进入。' : '密码会加密存入云数据库，用于保护账本。' }}
 				</view>
 				<input class="input" type="password" v-model="passwordInput" placeholder="请输入密码" />
 				<input v-if="!hasPassword" class="input" type="password" v-model="confirmPasswordInput" placeholder="再次输入密码" />
@@ -26,93 +26,121 @@
 				:refresher-triggered="refreshing"
 				@refresherrefresh="handleRefresh"
 			>
-				<view v-if="activeTab === 'today'" class="hero-card">
+				<view v-if="activeTab === 'month'" class="hero-card">
 					<view class="hero-top">
 						<view>
 							<view class="hero-date">
 								<uni-icons type="calendar-filled" size="19" color="#ffffff"></uni-icons>
-								<text>{{ todayText }}</text>
+								<text>{{ cycleTitle }}</text>
 							</view>
-							<view class="hero-profit-label">{{ selectedRecordIsToday ? '今日收支' : '当日收支' }}</view>
+							<view class="hero-profit-label">{{ cycleRangeLabel }}</view>
 						</view>
-						<view class="hero-chip">{{ selectedRecordIsToday ? '今天' : '历史' }}</view>
+						<view class="hero-chip">{{ cycleStartDay }}号起</view>
 					</view>
-					<view :class="['hero-profit-amount', todayProfitLoss < 0 ? 'hero-profit-loss' : '']">
-						{{ formatMoney(todayProfitLoss, true) }}
+					<view :class="['hero-profit-amount', cycleNet < 0 ? 'hero-profit-loss' : '']">
+						{{ formatMoney(cycleNet, true) }}
 					</view>
 					<view class="hero-metrics">
 						<view>
 							<text>收入</text>
-							<strong>{{ formatMoney(todaySummary.totals.periodIncome) }}</strong>
+							<strong>{{ formatMoney(summary.totals.periodIncome) }}</strong>
 						</view>
 						<view>
 							<text>支出</text>
-							<strong>{{ formatMoney(todaySummary.totals.periodExpense) }}</strong>
+							<strong>{{ formatMoney(summary.totals.periodExpense) }}</strong>
+						</view>
+						<view>
+							<text>存款</text>
+							<strong>{{ formatMoney(summary.totals.periodDeposit) }}</strong>
 						</view>
 					</view>
 				</view>
 
-				<view v-if="activeTab === 'today'" class="panel">
+				<view v-if="activeTab === 'month'" class="panel">
 					<view class="section-header">
 						<view>
-							<view class="section-title">{{ selectedRecordIsToday ? '今日记录' : '日期记录' }}</view>
-							<view class="section-subtitle">{{ fullDateText }}</view>
+							<view class="section-title">月账明细</view>
+							<view class="section-subtitle">普通收支和人情收支合并展示</view>
 						</view>
 						<view class="header-actions">
 							<view class="refresh" @click="loadAll">
 								<uni-icons type="refresh" size="15" color="#667085"></uni-icons>
 								<text>刷新</text>
 							</view>
-							<view class="add-record-btn" @click="openRecordForm()">
+							<view class="add-record-btn" @click="openRecordForm('expense')">
 								<uni-icons type="plus" size="15" color="#ffffff"></uni-icons>
-								<text>新建</text>
+								<text>支出</text>
+							</view>
+							<view class="add-record-btn add-record-btn-green" @click="openRecordForm('income')">
+								<uni-icons type="download-filled" size="15" color="#ffffff"></uni-icons>
+								<text>收入</text>
 							</view>
 						</view>
 					</view>
-					<view class="date-toolbar">
-						<text class="date-nav" @click="shiftSelectedRecordDate(-1)">前一天</text>
-						<picker mode="date" :value="selectedRecordDate" @change="changeSelectedRecordDate">
-							<view class="date-picker-value">{{ fullDateText }}</view>
+
+					<view class="cycle-toolbar">
+						<text class="date-nav" @click="shiftSelectedCycleMonth(-1)">上个月</text>
+						<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
+							<view class="date-picker-value">{{ cycleTitle }}</view>
 						</picker>
-						<text class="date-nav" @click="shiftSelectedRecordDate(1)">后一天</text>
-						<text v-if="!selectedRecordIsToday" class="date-today" @click="resetSelectedRecordDate">今天</text>
+						<text class="date-nav" @click="shiftSelectedCycleMonth(1)">下个月</text>
 					</view>
-					<view v-if="!todayList.length && !todayLoading" class="empty">{{ todayEmptyText }}</view>
-					<view v-else-if="todayList.length" class="timeline">
+
+					<view class="cycle-settings">
+						<picker mode="selector" :range="cycleStartDayOptions" :value="cycleStartDay - 1" @change="changeCycleStartDay">
+							<view class="setting-pill">工资日 {{ cycleStartDay }}号</view>
+						</picker>
+						<input class="salary-input" type="digit" v-model="configForm.salaryAmount" placeholder="工资金额" />
+						<view class="setting-save" @click="saveBookConfig">保存设置</view>
+					</view>
+
+					<view class="quick-actions">
+						<view class="quick-action" @click="openSalaryIncomeForm">
+							<uni-icons type="wallet-filled" size="17" color="#12b76a"></uni-icons>
+							<text>工资 {{ formatMoney(salaryAmount) }}</text>
+						</view>
+						<view class="quick-action" @click="openRecordForm('expense')">
+							<uni-icons type="upload-filled" size="17" color="#c8171d"></uni-icons>
+							<text>记一笔支出</text>
+						</view>
+					</view>
+
+					<view v-if="!monthlyEntries.length && !monthlyLoading" class="empty">这个周期还没有记录。</view>
+					<view v-else-if="monthlyEntries.length" class="timeline">
 						<uni-swipe-action>
 							<uni-swipe-action-item
-								v-for="(record, index) in todayList"
-								:key="record._id"
+								v-for="(entry, index) in monthlyEntries"
+								:key="entry.source + '-' + entry._id"
 								:right-options="recordActionOptions"
-								@click="onRecordActionClick($event, record)"
+								@click="onMonthlyEntryActionClick($event, entry)"
 							>
 								<view class="record-item">
-							<view class="record-node">
-								<view v-if="index !== 0" class="node-line top-line"></view>
-								<view :class="['record-dot', 'record-dot-' + record.type]">
-									<uni-icons :type="recordIconType(record.type)" size="18" :color="recordIconColor(record.type)"></uni-icons>
-								</view>
-								<view v-if="index !== todayList.length - 1" class="node-line bottom-line"></view>
-							</view>
-							<view class="record-main">
-								<view class="record-name">{{ recordDisplayName(record) }}</view>
-								<view class="record-note">{{ recordTypeText(record.type) }}{{ record.note ? ' · ' + record.note : '' }}</view>
-							</view>
-							<view class="record-side">
-								<view :class="['record-amount', record.type === 'expense' ? 'danger-text' : '']">
-									{{ recordAmountText(record) }}
-								</view>
-								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
-							</view>
+									<view class="record-node">
+										<view v-if="index !== 0" class="node-line top-line"></view>
+										<view :class="['record-dot', entryToneClass(entry)]">
+											<uni-icons :type="entryIconType(entry)" size="18" :color="entryIconColor(entry)"></uni-icons>
+										</view>
+										<view v-if="index !== monthlyEntries.length - 1" class="node-line bottom-line"></view>
+									</view>
+									<view class="record-main">
+										<view class="record-name">{{ entryDisplayName(entry) }}</view>
+										<view class="record-note">{{ entryTypeText(entry) }}{{ entry.note ? ' · ' + entry.note : '' }}</view>
+									</view>
+									<view class="record-side">
+										<view :class="['record-amount', isExpenseEntry(entry) ? 'danger-text' : '']">
+											{{ entryAmountText(entry) }}
+										</view>
+										<view class="record-time">{{ shortDate(entry.occurred_at) }}</view>
+									</view>
 								</view>
 							</uni-swipe-action-item>
 						</uni-swipe-action>
-						<view v-if="todayHasMore" class="load-more" @click="fetchTodayRecords(false)">
-							<text v-if="todayLoading">加载中…</text>
-							<text v-else>加载更多（{{ todayList.length }}/{{ todayTotal }}）</text>
+						<view v-if="monthlyHasMore" class="load-more" @click="fetchMonthlyEntries(false)">
+							<text v-if="monthlyLoading">加载中...</text>
+							<text v-else>加载更多（{{ monthlyEntries.length }}/{{ monthlyTotal }}）</text>
 						</view>
 					</view>
-					<view v-else-if="todayLoading" class="empty">加载中…</view>
+					<view v-else-if="monthlyLoading" class="empty">加载中...</view>
 				</view>
 
 				<view v-else-if="activeTab === 'stats'" class="panel stats-panel">
@@ -120,34 +148,32 @@
 						<view>
 							<view class="section-title section-title-icon">
 								<uni-icons type="bars" size="22" color="#2563eb"></uni-icons>
-								<text>统计</text>
+								<text>月统计</text>
 							</view>
-							<view class="section-subtitle">周期汇总与最近 10 天走势</view>
+							<view class="section-subtitle">{{ cycleRangeLabel }}</view>
 						</view>
 					</view>
-					<view class="period-tabs">
-						<text
-							v-for="item in periodOptions"
-							:key="item.value"
-							:class="{ active: statPeriod === item.value }"
-							@click="changePeriod(item.value)"
-						>
-							{{ item.label }}
-						</text>
+
+					<view class="cycle-toolbar stats-cycle-toolbar">
+						<text class="date-nav" @click="shiftSelectedCycleMonth(-1)">上个月</text>
+						<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
+							<view class="date-picker-value">{{ cycleTitle }}</view>
+						</picker>
+						<text class="date-nav" @click="shiftSelectedCycleMonth(1)">下个月</text>
 					</view>
-					<view class="period-label">{{ statRangeLabel }}</view>
+
 					<view class="summary-grid">
 						<view class="summary-card">
 							<view class="summary-label">
 								<uni-icons type="download-filled" size="16" color="#12b76a"></uni-icons>
-								<text>周期收入</text>
+								<text>月收入</text>
 							</view>
 							<strong>{{ formatMoney(summary.totals.periodIncome) }}</strong>
 						</view>
 						<view class="summary-card">
 							<view class="summary-label">
 								<uni-icons type="upload-filled" size="16" color="#c8171d"></uni-icons>
-								<text>周期支出</text>
+								<text>月支出</text>
 							</view>
 							<strong class="danger-text">{{ formatMoney(summary.totals.periodExpense) }}</strong>
 						</view>
@@ -161,43 +187,50 @@
 						<view class="summary-card">
 							<view class="summary-label">
 								<uni-icons type="flag-filled" size="16" color="#f79009"></uni-icons>
-								<text>周期净额</text>
+								<text>月结余</text>
 							</view>
-							<strong>{{ formatMoney(summary.totals.periodNet, true) }}</strong>
+							<strong>{{ formatMoney(cycleNet, true) }}</strong>
 						</view>
 					</view>
+
 					<view class="chart-section">
 						<view class="chart-header">
 							<view>
-								<view class="chart-title">最近 10 天收支</view>
-								<view class="chart-subtitle">每天收入 / 支出双柱展示</view>
-							</view>
-							<view class="chart-pill">
-								<uni-icons type="calendar" size="14" color="#2563eb"></uni-icons>
-								<text>10天</text>
+								<view class="chart-title">最近5个月存款</view>
+								<view class="chart-subtitle">按工资周期统计 deposit 记录</view>
 							</view>
 						</view>
-						<view v-if="dailyChartReady" class="daily-chart-card">
+						<view v-if="monthlyDepositChartReady" class="daily-chart-card">
 							<qiun-data-charts
 								type="column"
-								canvas-id="dailyTrendColumn"
+								canvas-id="monthlyDepositColumn"
 								:canvas2d="true"
-								:chartData="dailyChartData"
-								:opts="dailyChartOpts"
+								:chartData="monthlyDepositChartData"
+								:opts="depositChartOpts"
 								background="rgba(0,0,0,0)"
 							></qiun-data-charts>
 						</view>
-						<view v-else class="empty chart-empty">最近 10 天暂无收入或支出记录。</view>
-						<view class="daily-total-row">
+						<view v-else class="empty chart-empty">最近5个周期暂无存款记录。</view>
+					</view>
+
+					<view class="chart-section">
+						<view class="chart-header">
 							<view>
-								<text>10天支出</text>
-								<strong class="danger-text">{{ formatMoney(dailyExpenseTotal) }}</strong>
-							</view>
-							<view>
-								<text>10天收入</text>
-								<strong>{{ formatMoney(dailyIncomeTotal) }}</strong>
+								<view class="chart-title">最近5天支出</view>
+								<view class="chart-subtitle">包含普通支出和人情送礼</view>
 							</view>
 						</view>
+						<view v-if="recentExpenseChartReady" class="daily-chart-card">
+							<qiun-data-charts
+								type="column"
+								canvas-id="recentExpenseColumn"
+								:canvas2d="true"
+								:chartData="recentExpenseChartData"
+								:opts="expenseChartOpts"
+								background="rgba(0,0,0,0)"
+							></qiun-data-charts>
+						</view>
+						<view v-else class="empty chart-empty">最近5天暂无支出记录。</view>
 					</view>
 				</view>
 
@@ -216,7 +249,7 @@
 					</view>
 					<view class="summary-strip">
 						<view>
-							<text>总存款</text>
+							<text>累计存款</text>
 							<strong>{{ formatMoney(summary.totals.deposit) }}</strong>
 						</view>
 					</view>
@@ -230,30 +263,30 @@
 								@click="onRecordActionClick($event, record)"
 							>
 								<view class="record-item">
-							<view class="record-node">
-								<view v-if="index !== 0" class="node-line top-line"></view>
-								<view :class="['record-dot', 'record-dot-' + record.type]">
-									<uni-icons :type="recordIconType(record.type)" size="18" :color="recordIconColor(record.type)"></uni-icons>
-								</view>
-								<view v-if="index !== depositList.length - 1" class="node-line bottom-line"></view>
-							</view>
-							<view class="record-main">
-								<view class="record-name">{{ recordDisplayName(record) }}</view>
-								<view class="record-note">存款{{ record.note ? ' · ' + record.note : '' }}</view>
-							</view>
-							<view class="record-side">
-								<view class="record-amount">{{ recordAmountText(record) }}</view>
-								<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
-							</view>
+									<view class="record-node">
+										<view v-if="index !== 0" class="node-line top-line"></view>
+										<view class="record-dot record-dot-deposit">
+											<uni-icons type="wallet-filled" size="18" color="#2563eb"></uni-icons>
+										</view>
+										<view v-if="index !== depositList.length - 1" class="node-line bottom-line"></view>
+									</view>
+									<view class="record-main">
+										<view class="record-name">{{ recordDisplayName(record) }}</view>
+										<view class="record-note">存款{{ record.note ? ' · ' + record.note : '' }}</view>
+									</view>
+									<view class="record-side">
+										<view class="record-amount">{{ recordAmountText(record) }}</view>
+										<view class="record-time">{{ shortDate(record.occurred_at) }}</view>
+									</view>
 								</view>
 							</uni-swipe-action-item>
 						</uni-swipe-action>
 						<view v-if="depositHasMore" class="load-more" @click="fetchDepositRecords(false)">
-							<text v-if="depositLoading">加载中…</text>
+							<text v-if="depositLoading">加载中...</text>
 							<text v-else>加载更多（{{ depositList.length }}/{{ depositTotal }}）</text>
 						</view>
 					</view>
-					<view v-else-if="depositLoading" class="empty">加载中…</view>
+					<view v-else-if="depositLoading" class="empty">加载中...</view>
 				</view>
 
 				<view v-else class="panel">
@@ -265,7 +298,7 @@
 						<view class="header-actions">
 							<view class="add-record-btn add-record-btn-amber" @click="openHumanRecordForm()">
 								<uni-icons type="gift-filled" size="15" color="#ffffff"></uni-icons>
-								<text>新建人情</text>
+								<text>新人情</text>
 							</view>
 						</view>
 					</view>
@@ -311,7 +344,7 @@
 								</uni-swipe-action-item>
 							</uni-swipe-action>
 							<view v-if="humanHasMore" class="load-more" @click="fetchHumanRecords(false)">
-								<text v-if="humanLoading">加载中…</text>
+								<text v-if="humanLoading">加载中...</text>
 								<text v-else>加载更多（{{ humanRecords.length }}/{{ humanTotal }}）</text>
 							</view>
 						</view>
@@ -353,9 +386,9 @@
 			</scroll-view>
 
 			<view class="bottom-tabbar">
-				<view :class="['tab-item', activeTab === 'today' ? 'active' : '']" @click="switchTab('today')">
-					<uni-icons type="calendar-filled" size="23" :color="activeTab === 'today' ? '#282321' : '#667085'"></uni-icons>
-					<text>今日记录</text>
+				<view :class="['tab-item', activeTab === 'month' ? 'active' : '']" @click="switchTab('month')">
+					<uni-icons type="calendar-filled" size="23" :color="activeTab === 'month' ? '#282321' : '#667085'"></uni-icons>
+					<text>月账</text>
 				</view>
 				<view :class="['tab-item', activeTab === 'stats' ? 'active' : '']" @click="switchTab('stats')">
 					<uni-icons type="bars" size="23" :color="activeTab === 'stats' ? '#282321' : '#667085'"></uni-icons>
@@ -380,7 +413,7 @@
 					<text :class="{ active: recordForm.type === 'expense' }" @click="recordForm.type = 'expense'">支出</text>
 				</view>
 				<view v-else class="deposit-form-tip">新建存款</view>
-				<input class="input" v-model="recordForm.name" placeholder="记录名，如 买菜 / 公众号收入 / 定期存款" />
+				<input class="input" v-model="recordForm.name" placeholder="记录名，如 工资 / 房租 / 买菜" />
 				<input class="input" type="digit" v-model="recordForm.amount" placeholder="金额，如 12.5" />
 				<picker mode="date" :value="recordForm.occurredDate" @change="recordForm.occurredDate = $event.detail.value">
 					<view class="picker">{{ recordForm.occurredDate }}</view>
@@ -395,9 +428,10 @@
 				</view>
 			</view>
 		</view>
+
 		<view v-if="showHumanRecordForm" class="modal-mask">
 			<view class="modal">
-				<view class="modal-title">{{ editingHumanRecordId ? '编辑人情记录' : '新建人情记录' }}</view>
+				<view class="modal-title">{{ editingHumanRecordId ? '编辑人情记录' : '新人情记录' }}</view>
 				<view class="type-tabs">
 					<text :class="{ active: humanRecordForm.type === 'human_income' }" @click="humanRecordForm.type = 'human_income'">收礼</text>
 					<text :class="{ active: humanRecordForm.type === 'human_expense' }" @click="humanRecordForm.type = 'human_expense'">送礼</text>
@@ -419,6 +453,7 @@
 				</view>
 			</view>
 		</view>
+
 		<view v-if="showFriendForm" class="modal-mask">
 			<view class="modal">
 				<view class="modal-title">{{ editingFriendId ? '编辑朋友' : '新增朋友' }}</view>
@@ -435,6 +470,8 @@
 
 <script>
 const TOKEN_KEY = 'money_auth_token';
+const DEFAULT_CYCLE_START_DAY = 5;
+const DEFAULT_SALARY_AMOUNT = 927000;
 
 export default {
 	data() {
@@ -446,17 +483,21 @@ export default {
 			token: '',
 			passwordInput: '',
 			confirmPasswordInput: '',
-			activeTab: 'today',
-			statPeriod: 'month',
-			selectedRecordDate: '',
+			activeTab: 'month',
+			selectedCycleMonth: '',
+			cycleStartDay: DEFAULT_CYCLE_START_DAY,
+			salaryAmount: DEFAULT_SALARY_AMOUNT,
+			configForm: {
+				salaryAmount: '9270'
+			},
 			summary: this.getEmptySummary(),
-			todaySummary: this.getEmptySummary(),
-			dailyStats: [],
-			todayList: [],
-			todayPage: 1,
-			todayTotal: 0,
-			todayHasMore: false,
-			todayLoading: false,
+			monthlyEntries: [],
+			monthlyPage: 1,
+			monthlyTotal: 0,
+			monthlyHasMore: false,
+			monthlyLoading: false,
+			depositStats: [],
+			recentExpenseStats: [],
 			depositList: [],
 			depositPage: 1,
 			depositTotal: 0,
@@ -502,17 +543,73 @@ export default {
 				name: '',
 				note: ''
 			},
-			dailyChartOpts: {
-				color: ['#c8171d', '#12b76a'],
+			depositChartOpts: this.getColumnChartOpts(['#2563eb'], 16),
+			expenseChartOpts: this.getColumnChartOpts(['#c8171d'], 18)
+		};
+	},
+	computed: {
+		cycleStartDayOptions() {
+			return Array.from({ length: 31 }, (_, index) => `${index + 1}号`);
+		},
+		cycleRange() {
+			return this.getCycleRangeByMonth(this.selectedCycleMonth, this.cycleStartDay);
+		},
+		cycleTitle() {
+			const date = this.parseCycleMonth(this.selectedCycleMonth);
+			return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+		},
+		cycleRangeLabel() {
+			const range = this.cycleRange;
+			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
+		},
+		cycleNet() {
+			const totals = this.summary && this.summary.totals;
+			if (!totals) return 0;
+			return Number(totals.periodIncome || 0) - Number(totals.periodExpense || 0);
+		},
+		monthlyDepositChartData() {
+			return {
+				categories: this.depositStats.map((item) => item.label),
+				series: [{ name: '存款', data: this.depositStats.map((item) => this.centsToYuan(item.deposit)) }]
+			};
+		},
+		monthlyDepositChartReady() {
+			return this.depositStats.some((item) => Number(item.deposit || 0) > 0);
+		},
+		recentExpenseChartData() {
+			return {
+				categories: this.recentExpenseStats.map((item) => item.label),
+				series: [{ name: '支出', data: this.recentExpenseStats.map((item) => this.centsToYuan(item.expense)) }]
+			};
+		},
+		recentExpenseChartReady() {
+			return this.recentExpenseStats.some((item) => Number(item.expense || 0) > 0);
+		},
+		friendPickerNames() {
+			return this.friends.map((item) => item.name);
+		},
+		humanFriendPickerIndex() {
+			if (!this.humanRecordForm.friendId) return 0;
+			const idx = this.friends.findIndex((item) => item._id === this.humanRecordForm.friendId);
+			return idx < 0 ? 0 : idx;
+		}
+	},
+	onLoad() {
+		this.selectedCycleMonth = this.getDefaultCycleMonth(this.cycleStartDay);
+		this.recordForm.occurredDate = this.formatDateInput(Date.now());
+		this.recordForm.occurredTime = this.formatTimeInput(Date.now());
+		this.humanRecordForm.occurredDate = this.formatDateInput(Date.now());
+		this.humanRecordForm.occurredTime = this.formatTimeInput(Date.now());
+		this.init();
+	},
+	methods: {
+		getColumnChartOpts(colors, width) {
+			return {
+				color: colors,
 				padding: [10, 10, 0, 0],
 				enableScroll: false,
 				dataLabel: false,
-				legend: {
-					show: true,
-					position: 'top',
-					float: 'right',
-					margin: 8
-				},
+				legend: { show: false },
 				xAxis: {
 					disableGrid: true,
 					fontColor: '#667085',
@@ -526,86 +623,13 @@ export default {
 				extra: {
 					column: {
 						type: 'group',
-						width: 12,
+						width,
 						activeBgColor: '#101828',
 						activeBgOpacity: 0.06
 					}
 				}
-			},
-			periodOptions: [
-				{ label: '日', value: 'day' },
-				{ label: '周', value: 'week' },
-				{ label: '月', value: 'month' },
-				{ label: '年', value: 'year' }
-			]
-		};
-	},
-	computed: {
-		todayText() {
-			const date = this.parseDateInput(this.selectedRecordDate);
-			return `${String(date.getDate()).padStart(2, '0')}日`;
-		},
-		fullDateText() {
-			const date = this.parseDateInput(this.selectedRecordDate);
-			return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-		},
-		selectedRecordIsToday() {
-			return this.selectedRecordDate === this.formatDateInput(Date.now());
-		},
-		todayEmptyText() {
-			return this.selectedRecordIsToday ? '今天还没有记录，点“+ 新建”记一笔。' : '这天还没有记录，点“+ 新建”补一笔。';
-		},
-		todayProfitLoss() {
-			const t = this.todaySummary && this.todaySummary.totals;
-			if (!t) return 0;
-			return (t.periodIncome || 0) - (t.periodExpense || 0);
-		},
-		statRangeLabel() {
-			const range = this.getPeriodRange(this.statPeriod);
-			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
-		},
-		dailyChartData() {
-			return {
-				categories: this.dailyStats.map((item) => item.label),
-				series: [
-					{
-						name: '支出',
-						data: this.dailyStats.map((item) => this.centsToYuan(item.expense))
-					},
-					{
-						name: '收入',
-						data: this.dailyStats.map((item) => this.centsToYuan(item.income))
-					}
-				]
 			};
 		},
-		dailyChartReady() {
-			return this.dailyStats.some((item) => Number(item.income || 0) > 0 || Number(item.expense || 0) > 0);
-		},
-		dailyExpenseTotal() {
-			return this.dailyStats.reduce((sum, item) => sum + Number(item.expense || 0), 0);
-		},
-		dailyIncomeTotal() {
-			return this.dailyStats.reduce((sum, item) => sum + Number(item.income || 0), 0);
-		},
-		friendPickerNames() {
-			return this.friends.map((item) => item.name);
-		},
-		humanFriendPickerIndex() {
-			if (!this.humanRecordForm.friendId) return 0;
-			const idx = this.friends.findIndex((item) => item._id === this.humanRecordForm.friendId);
-			return idx < 0 ? 0 : idx;
-		}
-	},
-	onLoad() {
-		this.selectedRecordDate = this.formatDateInput(Date.now());
-		this.recordForm.occurredDate = this.formatDateInput(Date.now());
-		this.recordForm.occurredTime = this.formatTimeInput(Date.now());
-		this.humanRecordForm.occurredDate = this.formatDateInput(Date.now());
-		this.humanRecordForm.occurredTime = this.formatTimeInput(Date.now());
-		this.init();
-	},
-	methods: {
 		getEmptySummary() {
 			return {
 				totals: {
@@ -626,34 +650,20 @@ export default {
 				}
 			};
 		},
-		normalizeDailyStats(rows = [], days = []) {
+		normalizeRangeStats(rows = [], ranges = []) {
 			const rowMap = rows.reduce((map, item) => {
 				map[item.key] = item;
 				return map;
 			}, {});
-			return days.map((day) => {
-				const row = rowMap[day.key] || {};
+			return ranges.map((range) => {
+				const row = rowMap[range.key] || {};
 				return {
-					...day,
+					...range,
 					income: Number(row.income || 0),
-					expense: Number(row.expense || 0)
+					expense: Number(row.expense || 0),
+					deposit: Number(row.deposit || 0)
 				};
 			});
-		},
-		getLastTenDayRanges() {
-			const today = this.parseDateInput(Date.now());
-			const days = [];
-			for (let i = 9; i >= 0; i -= 1) {
-				const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
-				const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
-				days.push({
-					key: this.formatDateInput(start.getTime()),
-					label: `${start.getMonth() + 1}/${start.getDate()}`,
-					startAt: start.getTime(),
-					endAt: end.getTime()
-				});
-			}
-			return days;
 		},
 		sortRecordsByTime(records = []) {
 			return records.slice().sort((a, b) => {
@@ -677,20 +687,19 @@ export default {
 				}
 			});
 			const result = res.result || {};
-			if (result.code !== 0) {
-				throw new Error(result.msg || '操作失败');
-			}
+			if (result.code !== 0) throw new Error(result.msg || '操作失败');
 			return result.data || {};
 		},
 		async init() {
 			this.loading = true;
 			try {
-				const authState = await this.callMoney('getAuthState', {}, false);
-				this.hasPassword = authState.hasPassword;
+				const state = await this.callMoney('getAuthState', {}, false);
+				this.hasPassword = state.hasPassword;
 				this.token = uni.getStorageSync(TOKEN_KEY) || '';
 				if (this.hasPassword && this.token) {
 					await this.callMoney('verifyToken', { token: this.token }, false);
 					this.authenticated = true;
+					await this.loadBookConfig();
 					await this.loadAll();
 				}
 			} catch (e) {
@@ -702,18 +711,15 @@ export default {
 		},
 		async submitAuth() {
 			const password = this.passwordInput.trim();
-			if (password.length < 4) {
-				return uni.showToast({ title: '密码至少 4 位', icon: 'none' });
-			}
+			if (password.length < 4) return uni.showToast({ title: '密码至少 4 位', icon: 'none' });
 			if (!this.hasPassword && password !== this.confirmPasswordInput.trim()) {
 				return uni.showToast({ title: '两次密码不一致', icon: 'none' });
 			}
-
 			this.submitting = true;
 			try {
 				if (!this.hasPassword) {
-					const authState = await this.callMoney('getAuthState', {}, false);
-					this.hasPassword = !!authState.hasPassword;
+					const state = await this.callMoney('getAuthState', {}, false);
+					this.hasPassword = !!state.hasPassword;
 					if (!this.hasPassword && password !== this.confirmPasswordInput.trim()) {
 						return uni.showToast({ title: '两次密码不一致', icon: 'none' });
 					}
@@ -726,6 +732,7 @@ export default {
 				this.hasPassword = true;
 				this.passwordInput = '';
 				this.confirmPasswordInput = '';
+				await this.loadBookConfig();
 				await this.loadAll();
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
@@ -733,24 +740,40 @@ export default {
 				this.submitting = false;
 			}
 		},
-		async loadSummary() {
-			const range = this.getPeriodRange(this.statPeriod);
-			const dayRange = this.getSelectedRecordDayRange();
-			const dailyDays = this.getLastTenDayRanges();
-			const [summaryData, todaySummaryData, dailyData] = await Promise.all([
-				this.callMoney('getSummary', range),
-				this.callMoney('getSummary', dayRange),
-				this.callMoney('getDailyStats', { days: dailyDays })
-			]);
-			this.summary = this.normalizeSummary(summaryData);
-			this.todaySummary = this.normalizeSummary(todaySummaryData);
-			this.dailyStats = this.normalizeDailyStats(dailyData.days || [], dailyDays);
+		async loadBookConfig() {
+			try {
+				const data = await this.callMoney('getBookConfig');
+				this.cycleStartDay = this.normalizeCycleStartDay(data.cycleStartDay);
+				this.salaryAmount = Number(data.salaryAmount || DEFAULT_SALARY_AMOUNT);
+			} catch (e) {
+				this.cycleStartDay = DEFAULT_CYCLE_START_DAY;
+				this.salaryAmount = DEFAULT_SALARY_AMOUNT;
+			}
+			this.configForm.salaryAmount = this.centsToYuan(this.salaryAmount).toString();
+			this.selectedCycleMonth = this.getDefaultCycleMonth(this.cycleStartDay);
+		},
+		async saveBookConfig() {
+			this.submitting = true;
+			try {
+				const data = await this.callMoney('updateBookConfig', {
+					cycleStartDay: this.cycleStartDay,
+					salaryAmount: this.configForm.salaryAmount
+				});
+				this.cycleStartDay = this.normalizeCycleStartDay(data.cycleStartDay);
+				this.salaryAmount = Number(data.salaryAmount || DEFAULT_SALARY_AMOUNT);
+				this.configForm.salaryAmount = this.centsToYuan(this.salaryAmount).toString();
+				await this.loadCycleData();
+				uni.showToast({ title: '已保存', icon: 'success' });
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.submitting = false;
+			}
 		},
 		async loadAll() {
 			try {
-				await this.loadSummary();
+				await this.loadCycleData();
 				await Promise.all([
-					this.fetchTodayRecords(true),
 					this.fetchDepositRecords(true),
 					this.fetchHumanRecords(true),
 					this.loadFriends(),
@@ -758,6 +781,62 @@ export default {
 				]);
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
+			}
+		},
+		async loadCycleData() {
+			await Promise.all([
+				this.loadSummary(),
+				this.fetchMonthlyEntries(true),
+				this.loadTrendStats()
+			]);
+		},
+		async loadSummary() {
+			const range = this.cycleRange;
+			const data = await this.callMoney('getSummary', {
+				startAt: range.startAt,
+				endAt: range.endAt
+			});
+			this.summary = this.normalizeSummary(data);
+		},
+		async loadTrendStats() {
+			const depositRanges = this.getRecentCycleRanges(5);
+			const expenseRanges = this.getLastDayRanges(5);
+			const [depositData, expenseData] = await Promise.all([
+				this.callMoney('getRangeStats', { ranges: depositRanges }),
+				this.callMoney('getRangeStats', { ranges: expenseRanges })
+			]);
+			this.depositStats = this.normalizeRangeStats(depositData.ranges || [], depositRanges);
+			this.recentExpenseStats = this.normalizeRangeStats(expenseData.ranges || [], expenseRanges);
+		},
+		async fetchMonthlyEntries(reset) {
+			if (this.monthlyLoading) return;
+			if (reset) {
+				this.monthlyPage = 1;
+				this.monthlyEntries = [];
+				this.monthlyHasMore = false;
+				this.monthlyTotal = 0;
+			} else if (!this.monthlyHasMore) {
+				return;
+			}
+			const page = reset ? 1 : this.monthlyPage + 1;
+			this.monthlyLoading = true;
+			try {
+				const range = this.cycleRange;
+				const data = await this.callMoney('listMonthlyEntries', {
+					startAt: range.startAt,
+					endAt: range.endAt,
+					page,
+					pageSize: 10
+				});
+				const list = this.sortRecordsByTime(data.entries || data.records || []);
+				this.monthlyEntries = this.sortRecordsByTime(reset ? list : this.monthlyEntries.concat(list));
+				this.monthlyPage = data.page;
+				this.monthlyTotal = data.total;
+				this.monthlyHasMore = !!data.hasMore;
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.monthlyLoading = false;
 			}
 		},
 		async loadHumanSummary() {
@@ -793,38 +872,6 @@ export default {
 				this.humanLoading = false;
 			}
 		},
-		async fetchTodayRecords(reset) {
-			if (this.todayLoading) return;
-			if (reset) {
-				this.todayPage = 1;
-				this.todayList = [];
-				this.todayHasMore = false;
-				this.todayTotal = 0;
-			} else if (!this.todayHasMore) {
-				return;
-			}
-			const page = reset ? 1 : this.todayPage + 1;
-			this.todayLoading = true;
-			try {
-				const range = this.getSelectedRecordDayRange();
-				const data = await this.callMoney('listRecords', {
-					types: ['income', 'expense'],
-					startAt: range.startAt,
-					endAt: range.endAt,
-					page,
-					pageSize: 10
-				});
-				const list = this.sortRecordsByTime(data.records || []);
-				this.todayList = this.sortRecordsByTime(reset ? list : this.todayList.concat(list));
-				this.todayPage = data.page;
-				this.todayTotal = data.total;
-				this.todayHasMore = !!data.hasMore;
-			} catch (e) {
-				uni.showToast({ title: e.message, icon: 'none' });
-			} finally {
-				this.todayLoading = false;
-			}
-		},
 		async fetchDepositRecords(reset) {
 			if (this.depositLoading) return;
 			if (reset) {
@@ -854,13 +901,18 @@ export default {
 				this.depositLoading = false;
 			}
 		},
-		async changePeriod(period) {
-			this.statPeriod = period;
-			try {
-				await this.loadSummary();
-			} catch (e) {
-				uni.showToast({ title: e.message, icon: 'none' });
-			}
+		openSalaryIncomeForm() {
+			const start = this.cycleRange.startAt;
+			this.editingRecordId = '';
+			this.recordForm = {
+				type: 'income',
+				name: '工资',
+				amount: this.centsToYuan(this.salaryAmount).toString(),
+				note: '',
+				occurredDate: this.formatDateInput(start),
+				occurredTime: '09:00'
+			};
+			this.showRecordForm = true;
 		},
 		openRecordForm(type = 'expense', record = null) {
 			if (record && record._id) {
@@ -868,7 +920,7 @@ export default {
 				this.recordForm = {
 					type: record.type,
 					name: record.name || '',
-					amount: ((Number(record.amount || 0)) / 100).toString(),
+					amount: (Number(record.amount || 0) / 100).toString(),
 					note: record.note || '',
 					occurredDate: this.formatDateInput(record.occurred_at || Date.now()),
 					occurredTime: this.formatTimeInput(record.occurred_at || Date.now())
@@ -882,7 +934,7 @@ export default {
 				name: '',
 				amount: '',
 				note: '',
-				occurredDate: type === 'deposit' ? this.formatDateInput(Date.now()) : (this.selectedRecordDate || this.formatDateInput(Date.now())),
+				occurredDate: type === 'deposit' ? this.formatDateInput(Date.now()) : this.getDefaultRecordDate(),
 				occurredTime: this.formatTimeInput(Date.now())
 			};
 			this.showRecordForm = true;
@@ -894,7 +946,6 @@ export default {
 			if (!this.recordForm.amount) {
 				return uni.showToast({ title: '请输入金额', icon: 'none' });
 			}
-
 			this.submitting = true;
 			try {
 				const isEdit = !!this.editingRecordId;
@@ -920,15 +971,20 @@ export default {
 				this.submitting = false;
 			}
 		},
+		async onMonthlyEntryActionClick(e, entry) {
+			if (entry.source === 'human') {
+				await this.onHumanRecordActionClick(e, entry);
+				return;
+			}
+			await this.onRecordActionClick(e, entry);
+		},
 		async onRecordActionClick(e, record) {
 			const idx = Number(e && e.index);
 			if (idx === 0) {
 				this.openRecordForm(record.type, record);
 				return;
 			}
-			if (idx === 1) {
-				await this.removeRecord(record);
-			}
+			if (idx === 1) await this.removeRecord(record);
 		},
 		async onHumanRecordActionClick(e, record) {
 			const idx = Number(e && e.index);
@@ -964,8 +1020,8 @@ export default {
 				this.humanRecordForm = {
 					type: record.type,
 					friendId: record.friend_id || '',
-					friendName: record.friend_name || '',
-					amount: ((Number(record.amount || 0)) / 100).toString(),
+					friendName: record.friend_name || record.name || '',
+					amount: (Number(record.amount || 0) / 100).toString(),
 					note: record.note || '',
 					occurredDate: this.formatDateInput(record.occurred_at || nowTs),
 					occurredTime: this.formatTimeInput(record.occurred_at || nowTs)
@@ -978,7 +1034,7 @@ export default {
 					friendName: '',
 					amount: '',
 					note: '',
-					occurredDate: this.formatDateInput(nowTs),
+					occurredDate: this.getDefaultRecordDate(),
 					occurredTime: this.formatTimeInput(nowTs)
 				};
 			}
@@ -1011,7 +1067,7 @@ export default {
 				}
 				this.showHumanRecordForm = false;
 				this.editingHumanRecordId = '';
-				await Promise.all([this.fetchHumanRecords(true), this.loadHumanSummary()]);
+				await this.loadAll();
 				uni.showToast({ title: '已保存', icon: 'success' });
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
@@ -1023,12 +1079,12 @@ export default {
 			const that = this;
 			uni.showModal({
 				title: '删除记录',
-				content: `确认删除与「${record.friend_name || ''}」的这条记录吗？`,
+				content: `确认删除与「${record.friend_name || record.name || ''}」的这条记录吗？`,
 				success: async (res) => {
 					if (!res.confirm) return;
 					try {
 						await that.callMoney('deleteHumanRecord', { id: record._id });
-						await Promise.all([that.fetchHumanRecords(true), that.loadHumanSummary()]);
+						await that.loadAll();
 						uni.showToast({ title: '已删除', icon: 'success' });
 					} catch (e) {
 						uni.showToast({ title: e.message, icon: 'none' });
@@ -1090,26 +1146,20 @@ export default {
 		switchTab(tab) {
 			this.activeTab = tab;
 		},
-		async changeSelectedRecordDate(e) {
+		async changeSelectedCycleMonth(e) {
 			const value = e && e.detail ? e.detail.value : '';
-			if (!value || value === this.selectedRecordDate) return;
-			await this.setSelectedRecordDate(value);
+			if (!value) return;
+			this.selectedCycleMonth = this.normalizeCycleMonth(value);
+			await this.loadCycleData();
 		},
-		async shiftSelectedRecordDate(offset) {
-			const date = this.parseDateInput(this.selectedRecordDate);
-			date.setDate(date.getDate() + offset);
-			await this.setSelectedRecordDate(this.formatDateInput(date.getTime()));
+		async shiftSelectedCycleMonth(offset) {
+			this.selectedCycleMonth = this.addMonthsToCycleMonth(this.selectedCycleMonth, offset);
+			await this.loadCycleData();
 		},
-		async resetSelectedRecordDate() {
-			await this.setSelectedRecordDate(this.formatDateInput(Date.now()));
-		},
-		async setSelectedRecordDate(dateStr) {
-			this.selectedRecordDate = this.formatDateInput(this.parseDateInput(dateStr).getTime());
-			try {
-				await Promise.all([this.loadSummary(), this.fetchTodayRecords(true)]);
-			} catch (e) {
-				uni.showToast({ title: e.message, icon: 'none' });
-			}
+		async changeCycleStartDay(e) {
+			const index = Number(e.detail.value || 0);
+			this.cycleStartDay = this.normalizeCycleStartDay(index + 1);
+			await this.loadCycleData();
 		},
 		async handleRefresh() {
 			if (this.refreshing) return;
@@ -1119,6 +1169,88 @@ export default {
 			} finally {
 				this.refreshing = false;
 			}
+		},
+		normalizeCycleStartDay(value) {
+			const day = Math.round(Number(value || DEFAULT_CYCLE_START_DAY));
+			if (!Number.isFinite(day)) return DEFAULT_CYCLE_START_DAY;
+			return Math.min(Math.max(day, 1), 31);
+		},
+		normalizeCycleMonth(value) {
+			if (typeof value === 'string') {
+				const match = value.match(/^(\d{4})-(\d{1,2})/);
+				if (match) {
+					return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}`;
+				}
+			}
+			return this.formatCycleMonth(Date.now());
+		},
+		parseCycleMonth(value) {
+			const normalized = this.normalizeCycleMonth(value);
+			const [year, month] = normalized.split('-').map(Number);
+			return new Date(year, month - 1, 1);
+		},
+		formatCycleMonth(timestamp) {
+			const date = new Date(timestamp);
+			return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+		},
+		getDefaultCycleMonth(startDay) {
+			const today = this.parseDateInput(Date.now());
+			const monthStart = this.getCycleDate(today.getFullYear(), today.getMonth(), startDay);
+			if (today.getTime() < monthStart.getTime()) {
+				return this.formatCycleMonth(new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime());
+			}
+			return this.formatCycleMonth(today.getTime());
+		},
+		getCycleDate(year, monthIndex, startDay) {
+			const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+			return new Date(year, monthIndex, Math.min(startDay, lastDay));
+		},
+		getCycleRangeByMonth(monthValue, startDay) {
+			const base = this.parseCycleMonth(monthValue);
+			const start = this.getCycleDate(base.getFullYear(), base.getMonth(), startDay);
+			const endBase = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+			const end = this.getCycleDate(endBase.getFullYear(), endBase.getMonth(), startDay);
+			return { startAt: start.getTime(), endAt: end.getTime() };
+		},
+		addMonthsToCycleMonth(monthValue, offset) {
+			const base = this.parseCycleMonth(monthValue);
+			return this.formatCycleMonth(new Date(base.getFullYear(), base.getMonth() + offset, 1).getTime());
+		},
+		getRecentCycleRanges(count) {
+			const ranges = [];
+			for (let i = count - 1; i >= 0; i -= 1) {
+				const month = this.addMonthsToCycleMonth(this.selectedCycleMonth, -i);
+				const range = this.getCycleRangeByMonth(month, this.cycleStartDay);
+				const date = this.parseCycleMonth(month);
+				ranges.push({
+					key: month,
+					label: `${date.getMonth() + 1}月`,
+					startAt: range.startAt,
+					endAt: range.endAt
+				});
+			}
+			return ranges;
+		},
+		getLastDayRanges(count) {
+			const today = this.parseDateInput(Date.now());
+			const days = [];
+			for (let i = count - 1; i >= 0; i -= 1) {
+				const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+				const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+				days.push({
+					key: this.formatDateInput(start.getTime()),
+					label: `${start.getMonth() + 1}/${start.getDate()}`,
+					startAt: start.getTime(),
+					endAt: end.getTime()
+				});
+			}
+			return days;
+		},
+		getDefaultRecordDate() {
+			const now = this.parseDateInput(Date.now()).getTime();
+			const range = this.cycleRange;
+			if (now >= range.startAt && now < range.endAt) return this.formatDateInput(now);
+			return this.formatDateInput(range.startAt);
 		},
 		parseDateInput(value) {
 			if (typeof value === 'string') {
@@ -1132,30 +1264,6 @@ export default {
 			const date = new Date(source);
 			if (!Number.isFinite(date.getTime())) return new Date();
 			return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-		},
-		getSelectedRecordDayRange() {
-			const start = this.parseDateInput(this.selectedRecordDate);
-			const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
-			return { startAt: start.getTime(), endAt: end.getTime() };
-		},
-		getPeriodRange(period, baseValue = Date.now()) {
-			const now = this.parseDateInput(baseValue);
-			let start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-			let end = new Date(start);
-			if (period === 'week') {
-				const day = start.getDay() || 7;
-				start = new Date(start.getFullYear(), start.getMonth(), start.getDate() - day + 1);
-				end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
-			} else if (period === 'month') {
-				start = new Date(now.getFullYear(), now.getMonth(), 1);
-				end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-			} else if (period === 'year') {
-				start = new Date(now.getFullYear(), 0, 1);
-				end = new Date(now.getFullYear() + 1, 0, 1);
-			} else {
-				end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
-			}
-			return { startAt: start.getTime(), endAt: end.getTime() };
 		},
 		formatDateInput(timestamp) {
 			const date = new Date(timestamp);
@@ -1171,14 +1279,7 @@ export default {
 			return `${hours}:${minutes}`;
 		},
 		getRecordTimestamp() {
-			const dateStr = this.recordForm.occurredDate || this.formatDateInput(Date.now());
-			const timeStr = this.recordForm.occurredTime || this.formatTimeInput(Date.now());
-			const [year, month, day] = dateStr.split('-').map(Number);
-			const [hour, minute] = timeStr.split(':').map(Number);
-			const h = Number.isFinite(hour) ? hour : new Date().getHours();
-			const min = Number.isFinite(minute) ? minute : new Date().getMinutes();
-			const t = new Date(year, month - 1, day, h, min, 0, 0).getTime();
-			return Number.isFinite(t) ? t : Date.now();
+			return this.getTimestampByDateTime(this.recordForm.occurredDate, this.recordForm.occurredTime);
 		},
 		getTimestampByDateTime(dateStr, timeStr) {
 			const d = dateStr || this.formatDateInput(Date.now());
@@ -1192,46 +1293,74 @@ export default {
 		},
 		formatDateText(timestamp) {
 			const date = new Date(timestamp);
-			return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
+			return `${date.getMonth() + 1}月${date.getDate()}日`;
 		},
 		shortDate(timestamp) {
-			const ts = Number(timestamp);
-			if (!Number.isFinite(ts)) return '';
-			const date = new Date(ts);
-			const m = date.getMonth() + 1;
-			const d = date.getDate();
-			const hh = String(date.getHours()).padStart(2, '0');
-			const mm = String(date.getMinutes()).padStart(2, '0');
-			return `${m}月${d}日 ${hh}:${mm}`;
+			const date = new Date(timestamp || Date.now());
+			return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 		},
 		formatMoney(cents, withSign = false) {
 			const value = Number(cents || 0) / 100;
-			const sign = withSign && value > 0 ? '+' : '';
-			return `${sign}${value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+			const abs = Math.abs(value);
+			const text = abs.toLocaleString('zh-CN', {
+				minimumFractionDigits: abs % 1 === 0 ? 0 : 2,
+				maximumFractionDigits: 2
+			});
+			if (withSign) {
+				if (value > 0) return `+￥${text}`;
+				if (value < 0) return `-￥${text}`;
+			}
+			return `￥${text}`;
 		},
-		recordTypeText(type) {
-			return { income: '收入', expense: '支出', deposit: '存款', other: '合并' }[type] || '记录';
+		isExpenseEntry(entry) {
+			return ['expense', 'human_expense'].includes(entry.type);
 		},
-		recordIconType(type) {
-			return { income: 'download-filled', expense: 'upload-filled', deposit: 'wallet-filled' }[type] || 'compose';
+		entryDisplayName(entry) {
+			if (entry.source === 'human') return entry.friend_name || entry.name || '人情记录';
+			return entry.name || '未命名';
 		},
-		recordIconColor(type) {
-			return { income: '#12b76a', expense: '#c8171d', deposit: '#2563eb' }[type] || '#667085';
+		entryTypeText(entry) {
+			const map = {
+				income: '收入',
+				expense: '支出',
+				human_income: '收礼',
+				human_expense: '送礼'
+			};
+			return map[entry.type] || '记录';
+		},
+		entryAmountText(entry) {
+			const prefix = this.isExpenseEntry(entry) ? '-' : '+';
+			return `${prefix}${this.formatMoney(entry.amount)}`;
+		},
+		entryToneClass(entry) {
+			if (['income', 'human_income'].includes(entry.type)) return 'record-dot-income';
+			if (['expense', 'human_expense'].includes(entry.type)) return 'record-dot-expense';
+			return 'record-dot-deposit';
+		},
+		entryIconType(entry) {
+			if (entry.source === 'human') return 'gift-filled';
+			return { income: 'download-filled', expense: 'upload-filled', deposit: 'wallet-filled' }[entry.type] || 'compose';
+		},
+		entryIconColor(entry) {
+			if (['income', 'human_income'].includes(entry.type)) return '#12b76a';
+			if (['expense', 'human_expense'].includes(entry.type)) return '#c8171d';
+			return '#2563eb';
 		},
 		recordDisplayName(record) {
-			return record.name || record.note || this.recordTypeText(record.type);
+			return record.name || '未命名';
 		},
 		recordAmountText(record) {
-			return `${record.type === 'expense' ? '-' : '+'}${this.formatMoney(record.amount)}`;
+			const prefix = record.type === 'expense' ? '-' : '+';
+			return `${prefix}${this.formatMoney(record.amount)}`;
 		}
 	}
 };
 </script>
 
-<style>
+<style lang="scss">
 .page {
 	min-height: 100vh;
-	background: #f5f7fb;
+	background: #f8f8f8;
 	color: #101828;
 }
 
@@ -1256,15 +1385,15 @@ export default {
 	align-items: center;
 	justify-content: center;
 	padding: 40rpx;
-	background: #eef5ff;
+	background: #f5f1ee;
 }
 
 .auth-card,
 .panel,
 .modal {
 	background: #ffffff;
-	border-radius: 16rpx;
-	box-shadow: 0 18rpx 48rpx rgba(16, 24, 40, 0.08);
+	border-radius: 28rpx;
+	box-shadow: 0 20rpx 60rpx rgba(16, 24, 40, 0.08);
 }
 
 .auth-card {
@@ -1274,7 +1403,7 @@ export default {
 }
 
 .brand {
-	color: #2563eb;
+	color: #7a6a63;
 	font-size: 26rpx;
 	margin-bottom: 24rpx;
 }
@@ -1290,8 +1419,7 @@ export default {
 .record-note,
 .record-time,
 .summary-card text,
-.summary-strip text,
-.period-label {
+.summary-strip text {
 	color: #667085;
 	font-size: 24rpx;
 }
@@ -1302,7 +1430,8 @@ export default {
 }
 
 .input,
-.picker {
+.picker,
+.salary-input {
 	min-height: 88rpx;
 	line-height: 88rpx;
 	padding: 0 24rpx;
@@ -1310,12 +1439,13 @@ export default {
 	border-radius: 18rpx;
 	background: #f7f7f7;
 	font-size: 28rpx;
+	box-sizing: border-box;
 }
 
 .primary-btn {
-	background: #2563eb;
+	background: #282321;
 	color: #ffffff;
-	border-radius: 16rpx;
+	border-radius: 18rpx;
 }
 
 .app-shell {
@@ -1324,60 +1454,36 @@ export default {
 
 .content {
 	height: 100vh;
-	padding: 18rpx 18rpx 160rpx;
+	padding: 12rpx 12rpx 160rpx;
 	box-sizing: border-box;
-	scrollbar-width: none;
-}
-
-.content::-webkit-scrollbar {
-	width: 0;
-	height: 0;
-	display: none;
 }
 
 .hero-card {
-	position: relative;
-	overflow: hidden;
 	padding: 30rpx 32rpx;
-	border-radius: 16rpx;
-	background: linear-gradient(135deg, #172554 0%, #2563eb 56%, #12b76a 100%);
+	border-radius: 20rpx;
+	background: #282321;
 	color: #ffffff;
-	box-shadow: 0 18rpx 42rpx rgba(37, 99, 235, 0.24);
-}
-
-.section-header,
-.record-item,
-.summary-strip,
-.bottom-tabbar,
-.modal-actions {
-	display: flex;
-	align-items: center;
-}
-
-.section-header,
-.record-item,
-.summary-strip {
-	justify-content: space-between;
 }
 
 .hero-top,
 .hero-date,
 .hero-metrics,
-.summary-label,
-.section-title-icon,
-.refresh,
-.add-record-btn,
-.chart-pill,
-.daily-total-row {
+.section-header,
+.summary-strip,
+.bottom-tabbar,
+.modal-actions,
+.header-actions,
+.record-item,
+.summary-label {
 	display: flex;
 	align-items: center;
 }
 
-.hero-top {
-	position: relative;
-	z-index: 1;
+.hero-top,
+.section-header,
+.summary-strip,
+.record-item {
 	justify-content: space-between;
-	gap: 20rpx;
 }
 
 .hero-date {
@@ -1388,101 +1494,107 @@ export default {
 
 .hero-profit-label {
 	margin-top: 10rpx;
-	color: rgba(255, 255, 255, 0.58);
+	color: rgba(255, 255, 255, 0.62);
+	font-size: 24rpx;
+}
+
+.hero-chip {
+	padding: 10rpx 18rpx;
+	border-radius: 999rpx;
+	background: rgba(255, 255, 255, 0.14);
 	font-size: 24rpx;
 }
 
 .hero-profit-amount {
-	margin-top: 12rpx;
-	font-size: 56rpx;
+	margin-top: 14rpx;
+	font-size: 58rpx;
 	font-weight: 800;
-	position: relative;
-	z-index: 1;
+	letter-spacing: 0;
 }
 
 .hero-profit-loss {
-	color: #fecaca;
-}
-
-.hero-chip {
-	position: relative;
-	z-index: 1;
-	padding: 10rpx 18rpx;
-	border-radius: 999rpx;
-	background: rgba(255, 255, 255, 0.18);
-	font-size: 24rpx;
-	font-weight: 700;
+	color: #ffccd5;
 }
 
 .hero-metrics {
-	position: relative;
-	z-index: 1;
 	gap: 16rpx;
-	margin-top: 26rpx;
+	margin-top: 24rpx;
 }
 
 .hero-metrics view {
 	flex: 1;
-	padding: 18rpx 20rpx;
+	padding: 18rpx;
 	border-radius: 16rpx;
-	background: rgba(255, 255, 255, 0.14);
+	background: rgba(255, 255, 255, 0.11);
 }
 
 .hero-metrics text {
 	display: block;
-	color: rgba(255, 255, 255, 0.72);
+	color: rgba(255, 255, 255, 0.66);
 	font-size: 22rpx;
 }
 
 .hero-metrics strong {
 	display: block;
 	margin-top: 8rpx;
-	font-size: 30rpx;
+	font-size: 28rpx;
 }
 
 .panel {
 	margin-top: 22rpx;
 	padding: 28rpx;
-	box-shadow: 0 12rpx 32rpx rgba(16, 24, 40, 0.06);
+	box-shadow: none;
 }
 
 .section-title {
 	font-size: 32rpx;
 	font-weight: 800;
-	margin-bottom: 18rpx;
+	margin-bottom: 8rpx;
 }
 
 .section-title-icon {
+	display: flex;
+	align-items: center;
 	gap: 10rpx;
 }
 
-.compact-header {
-	margin-bottom: 22rpx;
-}
-
 .refresh {
-	gap: 6rpx;
 	color: #667085;
 	font-size: 24rpx;
+	display: flex;
+	align-items: center;
+	gap: 6rpx;
 }
 
 .header-actions {
-	display: flex;
-	align-items: center;
-	gap: 18rpx;
+	gap: 12rpx;
+	flex-wrap: wrap;
+	justify-content: flex-end;
 }
 
-.date-toolbar {
+.cycle-toolbar,
+.cycle-settings,
+.quick-actions,
+.period-tabs {
 	display: flex;
 	align-items: center;
 	gap: 12rpx;
-	margin: 22rpx 0 8rpx;
 	flex-wrap: wrap;
 }
 
+.cycle-toolbar {
+	margin: 24rpx 0 12rpx;
+}
+
+.cycle-settings {
+	margin-bottom: 16rpx;
+}
+
 .date-nav,
-.date-today,
-.date-picker-value {
+.date-picker-value,
+.setting-pill,
+.setting-save,
+.quick-action {
 	min-height: 62rpx;
 	line-height: 62rpx;
 	padding: 0 20rpx;
@@ -1494,25 +1606,56 @@ export default {
 }
 
 .date-picker-value {
-	min-width: 220rpx;
+	min-width: 180rpx;
 	text-align: center;
-	background: #2563eb;
+	background: #282321;
 	color: #ffffff;
 	font-weight: 700;
 }
 
-.date-today {
-	background: #fff7ed;
-	color: #c2410c;
+.setting-pill {
+	background: #eff6ff;
+	color: #2563eb;
+}
+
+.salary-input {
+	width: 180rpx;
+	margin: 0;
+	min-height: 62rpx;
+	line-height: 62rpx;
+	font-size: 24rpx;
+}
+
+.setting-save {
+	background: #ecfdf3;
+	color: #087443;
+}
+
+.quick-actions {
+	margin-bottom: 8rpx;
+}
+
+.quick-action {
+	display: inline-flex;
+	align-items: center;
+	gap: 8rpx;
+	background: #ffffff;
+	border: 1px solid #e4e7ec;
 }
 
 .add-record-btn {
-	gap: 6rpx;
 	padding: 12rpx 22rpx;
 	border-radius: 999rpx;
 	background: #282321;
 	color: #ffffff;
 	font-size: 24rpx;
+	display: flex;
+	align-items: center;
+	gap: 6rpx;
+}
+
+.add-record-btn-green {
+	background: #087443;
 }
 
 .add-record-btn-blue {
@@ -1520,7 +1663,7 @@ export default {
 }
 
 .add-record-btn-amber {
-	background: #f79009;
+	background: #b54708;
 }
 
 .summary-strip {
@@ -1531,7 +1674,7 @@ export default {
 .summary-strip view {
 	flex: 1;
 	padding: 22rpx;
-	border-radius: 16rpx;
+	border-radius: 18rpx;
 	background: #f7f7f7;
 }
 
@@ -1551,9 +1694,9 @@ export default {
 
 .summary-card {
 	padding: 22rpx;
-	border-radius: 16rpx;
-	background: #f8fafc;
-	border: 1px solid #edf2f7;
+	border-radius: 18rpx;
+	background: #f7f7f7;
+	min-width: 0;
 }
 
 .summary-label {
@@ -1562,10 +1705,8 @@ export default {
 
 .chart-section {
 	margin-top: 28rpx;
-	padding: 24rpx;
-	border-radius: 16rpx;
-	background: #f8fafc;
-	border: 1px solid #edf2f7;
+	padding-top: 26rpx;
+	border-top: 1px solid #f0f0f0;
 }
 
 .chart-header {
@@ -1581,59 +1722,22 @@ export default {
 	font-weight: 800;
 }
 
-.chart-subtitle,
-.chart-empty {
+.chart-subtitle {
 	color: #667085;
 	font-size: 22rpx;
+	margin-top: 6rpx;
 }
 
 .chart-empty {
 	padding: 40rpx 0 22rpx;
 }
 
-.chart-pill {
-	flex-shrink: 0;
-	gap: 6rpx;
-	padding: 8rpx 16rpx;
-	border-radius: 999rpx;
-	background: #eff6ff;
-	color: #2563eb;
-	font-size: 22rpx;
-}
-
 .daily-chart-card {
 	height: 360rpx;
-	margin-top: 8rpx;
-}
-
-.daily-total-row {
-	gap: 16rpx;
-	margin-top: 20rpx;
-}
-
-.daily-total-row view {
-	flex: 1;
-	padding: 18rpx;
-	border-radius: 16rpx;
-	background: #ffffff;
-	border: 1px solid #edf2f7;
-}
-
-.daily-total-row text {
-	color: #667085;
-	font-size: 22rpx;
-}
-
-.daily-total-row strong {
-	display: block;
-	margin-top: 8rpx;
-	font-size: 28rpx;
 }
 
 .period-tabs {
-	display: flex;
-	gap: 14rpx;
-	margin-bottom: 14rpx;
+	margin: 22rpx 0;
 }
 
 .period-tabs text {
@@ -1647,7 +1751,7 @@ export default {
 }
 
 .period-tabs .active {
-	background: #2563eb;
+	background: #282321;
 	color: #ffffff;
 }
 
@@ -1719,6 +1823,7 @@ export default {
 	font-size: 22rpx;
 	font-weight: 700;
 	z-index: 1;
+	flex-shrink: 0;
 }
 
 .record-dot-income {
@@ -1740,7 +1845,7 @@ export default {
 .compact-dot {
 	width: 64rpx;
 	height: 64rpx;
-	flex-shrink: 0;
+	margin: 0 20rpx 0 8rpx;
 }
 
 .record-main {
@@ -1751,6 +1856,9 @@ export default {
 .record-name {
 	font-size: 30rpx;
 	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .record-side {
@@ -1794,10 +1902,6 @@ export default {
 .tab-item.active {
 	color: #282321;
 	font-weight: 700;
-}
-
-.tab-icon {
-	font-size: 28rpx;
 }
 
 .modal-mask {
