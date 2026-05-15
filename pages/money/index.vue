@@ -44,6 +44,7 @@
 					<view :class="['hero-profit-amount', cycleNet < 0 ? 'hero-profit-loss' : '']">
 						<text>{{ formatMoney(cycleNet, true) }}</text>
 						<text v-if="periodAdvance > 0" class="advance-minus">-{{ formatMoney(periodAdvance) }}</text>
+						<text v-if="periodAdvance > 0" class="advance-after">= {{ formatMoney(cycleNetAfterAdvance, true) }}</text>
 					</view>
 					<view class="hero-metrics">
 						<view>
@@ -131,8 +132,8 @@
 							<uni-swipe-action-item
 								v-for="(entry, index) in advanceEntries"
 								:key="'advance-' + entry._id"
-								:right-options="recordActionOptions"
-								@click="onRecordActionClick($event, entry)"
+								:right-options="advanceActionOptions"
+								@click="onAdvanceActionClick($event, entry)"
 							>
 								<view class="record-item">
 									<view class="record-node">
@@ -198,6 +199,7 @@
 							<strong>
 								{{ formatMoney(cycleNet, true) }}
 								<text v-if="periodAdvance > 0" class="summary-advance-minus">-{{ formatMoney(periodAdvance) }}</text>
+								<text v-if="periodAdvance > 0" class="summary-advance-after">= {{ formatMoney(cycleNetAfterAdvance, true) }}</text>
 							</strong>
 						</view>
 					</view>
@@ -416,12 +418,12 @@
 
 		<view v-if="showRecordForm" class="modal-mask">
 			<view class="modal">
-				<view class="modal-title">{{ editingRecordId ? '编辑记录' : '新建记录' }}</view>
-				<view v-if="recordForm.type !== 'deposit' && recordForm.type !== 'advance'" class="type-tabs">
+				<view class="modal-title">{{ recordModalTitle }}</view>
+				<view v-if="!convertingAdvanceId && recordForm.type !== 'deposit' && recordForm.type !== 'advance'" class="type-tabs">
 					<text :class="{ active: recordForm.type === 'income' }" @click="recordForm.type = 'income'">收入</text>
 					<text :class="{ active: recordForm.type === 'expense' }" @click="recordForm.type = 'expense'">支出</text>
 				</view>
-				<view v-else class="deposit-form-tip">{{ recordForm.type === 'deposit' ? '存款记录' : '预支记录' }}</view>
+				<view v-else class="deposit-form-tip">{{ recordTypeTip }}</view>
 				<input class="input" v-model="recordForm.name" placeholder="记录名，如 工资 / 房租 / 买菜" />
 				<input class="input" type="digit" v-model="recordForm.amount" placeholder="金额，如 12.5" />
 				<picker mode="date" :value="recordForm.occurredDate" @change="recordForm.occurredDate = $event.detail.value">
@@ -432,8 +434,8 @@
 				</picker>
 				<input class="input" v-model="recordForm.note" placeholder="备注，可不填" />
 				<view class="modal-actions">
-					<button @click="showRecordForm = false">取消</button>
-					<button class="primary-btn" :loading="submitting" @click="submitRecord">保存</button>
+					<button @click="closeRecordForm">取消</button>
+					<button class="primary-btn" :loading="submitting" @click="submitRecord">{{ recordSubmitText }}</button>
 				</view>
 			</view>
 		</view>
@@ -523,9 +525,15 @@ export default {
 			friends: [],
 			refreshing: false,
 			editingRecordId: '',
+			convertingAdvanceId: '',
 			editingHumanRecordId: '',
 			editingFriendId: '',
 			recordActionOptions: [
+				{ text: '编辑', style: { backgroundColor: '#282321' } },
+				{ text: '删除', style: { backgroundColor: '#c8171d' } }
+			],
+			advanceActionOptions: [
+				{ text: '支出', style: { backgroundColor: '#667085' } },
 				{ text: '编辑', style: { backgroundColor: '#282321' } },
 				{ text: '删除', style: { backgroundColor: '#c8171d' } }
 			],
@@ -580,6 +588,23 @@ export default {
 		periodAdvance() {
 			const totals = this.summary && this.summary.totals;
 			return Number((totals && totals.periodAdvance) || 0);
+		},
+		cycleNetAfterAdvance() {
+			return this.cycleNet - this.periodAdvance;
+		},
+		recordModalTitle() {
+			if (this.convertingAdvanceId) return '转为实际支出';
+			if (this.editingRecordId) return '编辑记录';
+			return '新建记录';
+		},
+		recordSubmitText() {
+			return this.convertingAdvanceId ? '确认转支出' : '保存';
+		},
+		recordTypeTip() {
+			if (this.convertingAdvanceId) return '确认支出信息';
+			if (this.recordForm.type === 'deposit') return '存款记录';
+			if (this.recordForm.type === 'advance') return '预支记录';
+			return '记录';
 		},
 		monthlyDepositChartData() {
 			return {
@@ -944,6 +969,7 @@ export default {
 			}
 		},
 		openRecordForm(type = 'expense', record = null) {
+			this.convertingAdvanceId = '';
 			if (record && record._id) {
 				this.editingRecordId = record._id;
 				this.recordForm = {
@@ -968,6 +994,24 @@ export default {
 			};
 			this.showRecordForm = true;
 		},
+		openAdvanceToExpenseForm(record) {
+			this.editingRecordId = record._id;
+			this.convertingAdvanceId = record._id;
+			this.recordForm = {
+				type: 'expense',
+				name: record.name || '',
+				amount: (Number(record.amount || 0) / 100).toString(),
+				note: record.note || '',
+				occurredDate: this.formatDateInput(record.occurred_at || Date.now()),
+				occurredTime: this.formatTimeInput(record.occurred_at || Date.now())
+			};
+			this.showRecordForm = true;
+		},
+		closeRecordForm() {
+			this.showRecordForm = false;
+			this.editingRecordId = '';
+			this.convertingAdvanceId = '';
+		},
 		async submitRecord() {
 			if (!this.recordForm.name.trim()) {
 				return uni.showToast({ title: '请输入记录名', icon: 'none' });
@@ -978,6 +1022,7 @@ export default {
 			this.submitting = true;
 			try {
 				const isEdit = !!this.editingRecordId;
+				const isConvertAdvance = !!this.convertingAdvanceId;
 				const payload = {
 					type: this.recordForm.type,
 					name: this.recordForm.name,
@@ -992,8 +1037,9 @@ export default {
 				}
 				this.showRecordForm = false;
 				this.editingRecordId = '';
+				this.convertingAdvanceId = '';
 				await this.loadAll();
-				uni.showToast({ title: isEdit ? '已更新' : '已保存', icon: 'success' });
+				uni.showToast({ title: isConvertAdvance ? '已转为支出' : isEdit ? '已更新' : '已保存', icon: 'success' });
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
 			} finally {
@@ -1014,6 +1060,12 @@ export default {
 				return;
 			}
 			if (idx === 1) await this.removeRecord(record);
+		},
+		async onAdvanceActionClick(e, record) {
+			const idx = Number(e && e.index);
+			if (idx === 0) return this.openAdvanceToExpenseForm(record);
+			if (idx === 1) return this.openRecordForm('advance', record);
+			if (idx === 2) return this.removeRecord(record);
 		},
 		async onHumanRecordActionClick(e, record) {
 			const idx = Number(e && e.index);
@@ -1565,6 +1617,13 @@ export default {
 	white-space: nowrap;
 }
 
+.advance-after {
+	color: #ffffff;
+	font-size: 34rpx;
+	font-weight: 700;
+	white-space: nowrap;
+}
+
 .hero-metrics {
 	gap: 16rpx;
 	margin-top: 24rpx;
@@ -1684,6 +1743,14 @@ export default {
 .summary-advance-minus {
 	margin-left: 10rpx;
 	color: #98a2b3;
+	font-size: 24rpx;
+	font-weight: 700;
+	white-space: nowrap;
+}
+
+.summary-advance-after {
+	margin-left: 8rpx;
+	color: #101828;
 	font-size: 24rpx;
 	font-weight: 700;
 	white-space: nowrap;
