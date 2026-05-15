@@ -1,5 +1,0 @@
-// 本文件用于在 HBuilderX 里用 JQL 调试关联的 uniCloud 数据库。
-// 可全部运行或选中部分运行；若有多条 JQL，仅最后一条生效。
-// 详见：https://uniapp.dcloud.net.cn/uniCloud/jql.html
-
-db.collection('money-records').orderBy('occurred_at', 'desc').limit(20).get();

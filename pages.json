@@ -12,13 +12,6 @@
       "style": {
         "navigationBarTitleText": "朋友收支"
       }
-    },
-    {
-      "path": "uni_modules/uni-upgrade-center-app/pages/upgrade-popup",
-      "style": {
-        "navigationStyle": "custom",
-        "disableScroll": true
-      }
     }
   ],
   "globalStyle": {
