@@ -171,11 +171,16 @@ async function updateBookConfig(payload = {}) {
 	const setting = await getSetting();
 	if (!setting || !setting._id) return fail('请先设置管理密码');
 
-	let cycleStartDay = DEFAULT_CYCLE_START_DAY;
-	let salaryAmount = DEFAULT_SALARY_AMOUNT;
+	const currentConfig = getConfigFromSetting(setting);
+	let cycleStartDay = currentConfig.cycleStartDay;
+	let salaryAmount = currentConfig.salaryAmount;
 	try {
-		cycleStartDay = normalizeCycleStartDay(payload.cycleStartDay);
-		salaryAmount = normalizeAmountToCents(payload.salaryAmount);
+		if (payload.cycleStartDay !== undefined && payload.cycleStartDay !== null && payload.cycleStartDay !== '') {
+			cycleStartDay = normalizeCycleStartDay(payload.cycleStartDay);
+		}
+		if (payload.salaryAmount !== undefined && payload.salaryAmount !== null && payload.salaryAmount !== '') {
+			salaryAmount = normalizeAmountToCents(payload.salaryAmount);
+		}
 	} catch (e) {
 		return fail(e.message);
 	}
@@ -486,7 +491,7 @@ async function listMonthlyEntries(payload = {}) {
 	const _ = db.command;
 	const range = { occurred_at: _.gte(startAt).and(_.lt(endAt)) };
 	const fetchLimit = skip + pageSize;
-	const recordCond = { type: _.in(['income', 'expense']), ...range };
+	const recordCond = { type: _.in(['income', 'expense', 'deposit']), ...range };
 	const humanCond = { type: _.in(['human_income', 'human_expense']), ...range };
 
 	const [recordCountRes, humanCountRes, recordRes, humanRes] = await Promise.all([
@@ -551,7 +556,7 @@ async function getRangeStats(payload = {}) {
 			return {
 				...range,
 				income: income + humanIncome,
-				expense: expense + humanExpense,
+				expense: expense + humanExpense + deposit,
 				deposit,
 				recordIncome: income,
 				recordExpense: expense,
@@ -584,13 +589,14 @@ async function getDailyStats(payload = {}) {
 
 	const rows = await Promise.all(
 		normalizedDays.map(async (day) => {
-			const [income, expense, humanIncome, humanExpense] = await Promise.all([
+			const [income, expense, deposit, humanIncome, humanExpense] = await Promise.all([
 				sumRecordsByTypeAndRange('income', day.startAt, day.endAt),
 				sumRecordsByTypeAndRange('expense', day.startAt, day.endAt),
+				sumRecordsByTypeAndRange('deposit', day.startAt, day.endAt),
 				includeHuman ? sumHumanRecordsByTypeAndRange('human_income', day.startAt, day.endAt) : 0,
 				includeHuman ? sumHumanRecordsByTypeAndRange('human_expense', day.startAt, day.endAt) : 0
 			]);
-			return { ...day, income: income + humanIncome, expense: expense + humanExpense };
+			return { ...day, income: income + humanIncome, expense: expense + humanExpense + deposit, deposit };
 		})
 	);
 
@@ -654,7 +660,7 @@ async function getSummary(payload = {}) {
 			return row ? Number(row.sum || 0) : 0;
 		};
 		totals.periodIncome = pick(incRes) + humanIncome;
-		totals.periodExpense = pick(expRes) + humanExpense;
+		totals.periodExpense = pick(expRes) + humanExpense + pick(depRes);
 		totals.periodDeposit = pick(depRes);
 
 		if (includeNameStats) {

@@ -49,10 +49,6 @@
 							<text>支出</text>
 							<strong>{{ formatMoney(summary.totals.periodExpense) }}</strong>
 						</view>
-						<view>
-							<text>存款</text>
-							<strong>{{ formatMoney(summary.totals.periodDeposit) }}</strong>
-						</view>
 					</view>
 				</view>
 
@@ -60,7 +56,7 @@
 					<view class="section-header">
 						<view>
 							<view class="section-title">月账明细</view>
-							<view class="section-subtitle">普通收支和人情收支合并展示</view>
+							<view class="section-subtitle">普通收支、存款和人情收支合并展示</view>
 						</view>
 						<view class="header-actions">
 							<view class="refresh" @click="loadAll">
@@ -79,30 +75,15 @@
 					</view>
 
 					<view class="cycle-toolbar">
-						<text class="date-nav" @click="shiftSelectedCycleMonth(-1)">上个月</text>
 						<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
-							<view class="date-picker-value">{{ cycleTitle }}</view>
+							<view class="date-picker-value">选择 {{ cycleTitle }}</view>
 						</picker>
-						<text class="date-nav" @click="shiftSelectedCycleMonth(1)">下个月</text>
 					</view>
 
 					<view class="cycle-settings">
 						<picker mode="selector" :range="cycleStartDayOptions" :value="cycleStartDay - 1" @change="changeCycleStartDay">
 							<view class="setting-pill">工资日 {{ cycleStartDay }}号</view>
 						</picker>
-						<input class="salary-input" type="digit" v-model="configForm.salaryAmount" placeholder="工资金额" />
-						<view class="setting-save" @click="saveBookConfig">保存设置</view>
-					</view>
-
-					<view class="quick-actions">
-						<view class="quick-action" @click="openSalaryIncomeForm">
-							<uni-icons type="wallet-filled" size="17" color="#12b76a"></uni-icons>
-							<text>工资 {{ formatMoney(salaryAmount) }}</text>
-						</view>
-						<view class="quick-action" @click="openRecordForm('expense')">
-							<uni-icons type="upload-filled" size="17" color="#c8171d"></uni-icons>
-							<text>记一笔支出</text>
-						</view>
 					</view>
 
 					<view v-if="!monthlyEntries.length && !monthlyLoading" class="empty">这个周期还没有记录。</view>
@@ -155,11 +136,9 @@
 					</view>
 
 					<view class="cycle-toolbar stats-cycle-toolbar">
-						<text class="date-nav" @click="shiftSelectedCycleMonth(-1)">上个月</text>
 						<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
-							<view class="date-picker-value">{{ cycleTitle }}</view>
+							<view class="date-picker-value">选择 {{ cycleTitle }}</view>
 						</picker>
-						<text class="date-nav" @click="shiftSelectedCycleMonth(1)">下个月</text>
 					</view>
 
 					<view class="summary-grid">
@@ -179,15 +158,8 @@
 						</view>
 						<view class="summary-card">
 							<view class="summary-label">
-								<uni-icons type="wallet-filled" size="16" color="#2563eb"></uni-icons>
-								<text>周期存款</text>
-							</view>
-							<strong>{{ formatMoney(summary.totals.periodDeposit) }}</strong>
-						</view>
-						<view class="summary-card">
-							<view class="summary-label">
 								<uni-icons type="flag-filled" size="16" color="#f79009"></uni-icons>
-								<text>月结余</text>
+								<text>剩余经费</text>
 							</view>
 							<strong>{{ formatMoney(cycleNet, true) }}</strong>
 						</view>
@@ -197,7 +169,7 @@
 						<view class="chart-header">
 							<view>
 								<view class="chart-title">最近5个月存款</view>
-								<view class="chart-subtitle">按工资周期统计 deposit 记录</view>
+								<view class="chart-subtitle">按工资周期统计存款记录</view>
 							</view>
 						</view>
 						<view v-if="monthlyDepositChartReady" class="daily-chart-card">
@@ -217,7 +189,7 @@
 						<view class="chart-header">
 							<view>
 								<view class="chart-title">最近5天支出</view>
-								<view class="chart-subtitle">包含普通支出和人情送礼</view>
+								<view class="chart-subtitle">包含普通支出、存款和人情送礼</view>
 							</view>
 						</view>
 						<view v-if="recentExpenseChartReady" class="daily-chart-card">
@@ -471,7 +443,6 @@
 <script>
 const TOKEN_KEY = 'money_auth_token';
 const DEFAULT_CYCLE_START_DAY = 5;
-const DEFAULT_SALARY_AMOUNT = 927000;
 
 export default {
 	data() {
@@ -486,10 +457,6 @@ export default {
 			activeTab: 'month',
 			selectedCycleMonth: '',
 			cycleStartDay: DEFAULT_CYCLE_START_DAY,
-			salaryAmount: DEFAULT_SALARY_AMOUNT,
-			configForm: {
-				salaryAmount: '9270'
-			},
 			summary: this.getEmptySummary(),
 			monthlyEntries: [],
 			monthlyPage: 1,
@@ -565,7 +532,7 @@ export default {
 		cycleNet() {
 			const totals = this.summary && this.summary.totals;
 			if (!totals) return 0;
-			return Number(totals.periodIncome || 0) - Number(totals.periodExpense || 0);
+			return Number(totals.periodNet || 0);
 		},
 		monthlyDepositChartData() {
 			return {
@@ -744,26 +711,20 @@ export default {
 			try {
 				const data = await this.callMoney('getBookConfig');
 				this.cycleStartDay = this.normalizeCycleStartDay(data.cycleStartDay);
-				this.salaryAmount = Number(data.salaryAmount || DEFAULT_SALARY_AMOUNT);
 			} catch (e) {
 				this.cycleStartDay = DEFAULT_CYCLE_START_DAY;
-				this.salaryAmount = DEFAULT_SALARY_AMOUNT;
 			}
-			this.configForm.salaryAmount = this.centsToYuan(this.salaryAmount).toString();
 			this.selectedCycleMonth = this.getDefaultCycleMonth(this.cycleStartDay);
 		},
-		async saveBookConfig() {
+		async saveBookConfig(showToast = true) {
 			this.submitting = true;
 			try {
 				const data = await this.callMoney('updateBookConfig', {
-					cycleStartDay: this.cycleStartDay,
-					salaryAmount: this.configForm.salaryAmount
+					cycleStartDay: this.cycleStartDay
 				});
 				this.cycleStartDay = this.normalizeCycleStartDay(data.cycleStartDay);
-				this.salaryAmount = Number(data.salaryAmount || DEFAULT_SALARY_AMOUNT);
-				this.configForm.salaryAmount = this.centsToYuan(this.salaryAmount).toString();
 				await this.loadCycleData();
-				uni.showToast({ title: '已保存', icon: 'success' });
+				if (showToast) uni.showToast({ title: '工资日已保存', icon: 'success' });
 			} catch (e) {
 				uni.showToast({ title: e.message, icon: 'none' });
 			} finally {
@@ -900,19 +861,6 @@ export default {
 			} finally {
 				this.depositLoading = false;
 			}
-		},
-		openSalaryIncomeForm() {
-			const start = this.cycleRange.startAt;
-			this.editingRecordId = '';
-			this.recordForm = {
-				type: 'income',
-				name: '工资',
-				amount: this.centsToYuan(this.salaryAmount).toString(),
-				note: '',
-				occurredDate: this.formatDateInput(start),
-				occurredTime: '09:00'
-			};
-			this.showRecordForm = true;
 		},
 		openRecordForm(type = 'expense', record = null) {
 			if (record && record._id) {
@@ -1152,14 +1100,10 @@ export default {
 			this.selectedCycleMonth = this.normalizeCycleMonth(value);
 			await this.loadCycleData();
 		},
-		async shiftSelectedCycleMonth(offset) {
-			this.selectedCycleMonth = this.addMonthsToCycleMonth(this.selectedCycleMonth, offset);
-			await this.loadCycleData();
-		},
 		async changeCycleStartDay(e) {
 			const index = Number(e.detail.value || 0);
 			this.cycleStartDay = this.normalizeCycleStartDay(index + 1);
-			await this.loadCycleData();
+			await this.saveBookConfig();
 		},
 		async handleRefresh() {
 			if (this.refreshing) return;
@@ -1313,7 +1257,7 @@ export default {
 			return `￥${text}`;
 		},
 		isExpenseEntry(entry) {
-			return ['expense', 'human_expense'].includes(entry.type);
+			return ['expense', 'human_expense', 'deposit'].includes(entry.type);
 		},
 		entryDisplayName(entry) {
 			if (entry.source === 'human') return entry.friend_name || entry.name || '人情记录';
@@ -1323,6 +1267,7 @@ export default {
 			const map = {
 				income: '收入',
 				expense: '支出',
+				deposit: '存款',
 				human_income: '收礼',
 				human_expense: '送礼'
 			};
@@ -1430,8 +1375,7 @@ export default {
 }
 
 .input,
-.picker,
-.salary-input {
+.picker {
 	min-height: 88rpx;
 	line-height: 88rpx;
 	padding: 0 24rpx;
@@ -1573,9 +1517,7 @@ export default {
 }
 
 .cycle-toolbar,
-.cycle-settings,
-.quick-actions,
-.period-tabs {
+.cycle-settings {
 	display: flex;
 	align-items: center;
 	gap: 12rpx;
@@ -1584,17 +1526,16 @@ export default {
 
 .cycle-toolbar {
 	margin: 24rpx 0 12rpx;
+	justify-content: center;
 }
 
 .cycle-settings {
 	margin-bottom: 16rpx;
+	justify-content: center;
 }
 
-.date-nav,
 .date-picker-value,
-.setting-pill,
-.setting-save,
-.quick-action {
+.setting-pill {
 	min-height: 62rpx;
 	line-height: 62rpx;
 	padding: 0 20rpx;
@@ -1606,7 +1547,7 @@ export default {
 }
 
 .date-picker-value {
-	min-width: 180rpx;
+	min-width: 240rpx;
 	text-align: center;
 	background: #282321;
 	color: #ffffff;
@@ -1616,31 +1557,6 @@ export default {
 .setting-pill {
 	background: #eff6ff;
 	color: #2563eb;
-}
-
-.salary-input {
-	width: 180rpx;
-	margin: 0;
-	min-height: 62rpx;
-	line-height: 62rpx;
-	font-size: 24rpx;
-}
-
-.setting-save {
-	background: #ecfdf3;
-	color: #087443;
-}
-
-.quick-actions {
-	margin-bottom: 8rpx;
-}
-
-.quick-action {
-	display: inline-flex;
-	align-items: center;
-	gap: 8rpx;
-	background: #ffffff;
-	border: 1px solid #e4e7ec;
 }
 
 .add-record-btn {
