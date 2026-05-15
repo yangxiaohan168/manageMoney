@@ -29,13 +29,17 @@
 				<view v-if="activeTab === 'month'" class="hero-card">
 					<view class="hero-top">
 						<view>
-							<view class="hero-date">
-								<uni-icons type="calendar-filled" size="19" color="#ffffff"></uni-icons>
-								<text>{{ cycleTitle }}</text>
-							</view>
+							<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
+								<view class="hero-date hero-date-action">
+									<uni-icons type="calendar-filled" size="19" color="#ffffff"></uni-icons>
+									<text>{{ cycleTitle }}</text>
+								</view>
+							</picker>
 							<view class="hero-profit-label">{{ cycleRangeLabel }}</view>
 						</view>
-						<view class="hero-chip">{{ cycleStartDay }}号起</view>
+						<picker mode="selector" :range="cycleStartDayOptions" :value="cycleStartDay - 1" @change="changeCycleStartDay">
+							<view class="hero-chip">{{ cycleStartDay }}号起</view>
+						</picker>
 					</view>
 					<view :class="['hero-profit-amount', cycleNet < 0 ? 'hero-profit-loss' : '']">
 						{{ formatMoney(cycleNet, true) }}
@@ -72,18 +76,6 @@
 								<text>收入</text>
 							</view>
 						</view>
-					</view>
-
-					<view class="cycle-toolbar">
-						<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
-							<view class="date-picker-value">选择 {{ cycleTitle }}</view>
-						</picker>
-					</view>
-
-					<view class="cycle-settings">
-						<picker mode="selector" :range="cycleStartDayOptions" :value="cycleStartDay - 1" @change="changeCycleStartDay">
-							<view class="setting-pill">工资日 {{ cycleStartDay }}号</view>
-						</picker>
 					</view>
 
 					<view v-if="!monthlyEntries.length && !monthlyLoading" class="empty">这个周期还没有记录。</view>
@@ -133,11 +125,8 @@
 							</view>
 							<view class="section-subtitle">{{ cycleRangeLabel }}</view>
 						</view>
-					</view>
-
-					<view class="cycle-toolbar stats-cycle-toolbar">
 						<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
-							<view class="date-picker-value">选择 {{ cycleTitle }}</view>
+							<view class="stats-month-pill">{{ cycleTitle }}</view>
 						</picker>
 					</view>
 
@@ -1436,6 +1425,10 @@ export default {
 	font-weight: 700;
 }
 
+.hero-date-action {
+	display: inline-flex;
+}
+
 .hero-profit-label {
 	margin-top: 10rpx;
 	color: rgba(255, 255, 255, 0.62);
@@ -1516,47 +1509,18 @@ export default {
 	justify-content: flex-end;
 }
 
-.cycle-toolbar,
-.cycle-settings {
-	display: flex;
-	align-items: center;
-	gap: 12rpx;
-	flex-wrap: wrap;
-}
-
-.cycle-toolbar {
-	margin: 24rpx 0 12rpx;
-	justify-content: center;
-}
-
-.cycle-settings {
-	margin-bottom: 16rpx;
-	justify-content: center;
-}
-
-.date-picker-value,
-.setting-pill {
+.stats-month-pill {
 	min-height: 62rpx;
 	line-height: 62rpx;
 	padding: 0 20rpx;
 	border-radius: 18rpx;
-	background: #f2f4f7;
-	color: #667085;
-	font-size: 24rpx;
-	box-sizing: border-box;
-}
-
-.date-picker-value {
-	min-width: 240rpx;
-	text-align: center;
 	background: #282321;
 	color: #ffffff;
+	font-size: 24rpx;
 	font-weight: 700;
-}
-
-.setting-pill {
-	background: #eff6ff;
-	color: #2563eb;
+	text-align: center;
+	box-sizing: border-box;
+	white-space: nowrap;
 }
 
 .add-record-btn {
