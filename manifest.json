@@ -11,5 +11,46 @@
       "base": "/h5/"
     }
   },
-  "vueVersion": "3"
+  "vueVersion": "3",
+  "app-plus": {
+    "distribute": {
+      "icons": {
+        "android": {
+          "ldpi": "static/app-icons/android/48x48.png",
+          "mdpi": "static/app-icons/android/48x48.png",
+          "hdpi": "static/app-icons/android/72x72.png",
+          "xhdpi": "static/app-icons/android/96x96.png",
+          "xxhdpi": "static/app-icons/android/144x144.png",
+          "xxxhdpi": "static/app-icons/android/192x192.png"
+        },
+        "ios": {
+          "appstore": "static/app-icons/ios/1024x1024.png",
+          "iphone": {
+            "app@2x": "static/app-icons/ios/120x120.png",
+            "app@3x": "static/app-icons/ios/180x180.png",
+            "spotlight@2x": "static/app-icons/ios/80x80.png",
+            "spotlight@3x": "static/app-icons/ios/120x120.png",
+            "settings@2x": "static/app-icons/ios/58x58.png",
+            "settings@3x": "static/app-icons/ios/87x87.png",
+            "notification@2x": "static/app-icons/ios/40x40.png",
+            "notification@3x": "static/app-icons/ios/60x60.png"
+          },
+          "ipad": {
+            "app": "static/app-icons/ios/76x76.png",
+            "app@2x": "static/app-icons/ios/152x152.png",
+            "proapp@2x": "static/app-icons/ios/167x167.png",
+            "spotlight": "static/app-icons/ios/40x40.png",
+            "spotlight@2x": "static/app-icons/ios/80x80.png",
+            "settings": "static/app-icons/ios/29x29.png",
+            "settings@2x": "static/app-icons/ios/58x58.png",
+            "notification": "static/app-icons/ios/20x20.png",
+            "notification@2x": "static/app-icons/ios/40x40.png"
+          }
+        }
+      },
+      "ios": {
+        "dSYMs": false
+      }
+    }
+  }
 }

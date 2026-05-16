@@ -1252,7 +1252,9 @@ export default {
 			try {
 				await this.loadAll();
 			} finally {
-				this.refreshing = false;
+				setTimeout(() => {
+					this.refreshing = false;
+				}, 80);
 			}
 		},
 		normalizeCycleStartDay(value) {
@@ -1541,6 +1543,8 @@ export default {
 
 .app-shell {
 	min-height: 100vh;
+	height: 100vh;
+	overflow: hidden;
 }
 
 .content {
@@ -1548,6 +1552,17 @@ export default {
 	padding: 12rpx 12rpx 160rpx;
 	box-sizing: border-box;
 }
+
+/* #ifdef H5 */
+.app-shell {
+	min-height: calc(100vh - var(--window-top, 0px));
+	height: calc(100vh - var(--window-top, 0px));
+}
+
+.content {
+	height: 100%;
+}
+/* #endif */
 
 .hero-card {
 	padding: 30rpx 32rpx;
