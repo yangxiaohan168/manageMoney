@@ -1,6 +1,6 @@
-# 一起存钱之工资去哪了？
+# 存钱了么
 
-一个专为打工人设计的 **存款记账 App**。发工资那天先摸摸余额，月底再看看钱都去哪儿团建了，目标很朴素：早日存款过亿、早日退休、早日把闹钟从人生里删除。
+一个专为打工人设计的 **存款记账 App**。每天打开先问一句：**存钱了么？** 如果没存，也别慌，至少先把钱去哪儿了查明白。
 
 项目基于 **uni-app（Vue 3）+ uniCloud（阿里云）** 开发，主打通过 HBuilderX 云打包成 Android/iOS App 使用；不想装 App 的朋友，也可以发布成 H5，当作一个轻量网页版账本。
 
@@ -16,7 +16,7 @@
 
 ## App 图标
 
-<img src="./static/app-icon.png" width="120" alt="一起存钱 App 图标" />
+<img src="./static/app-icon.png" width="120" alt="存钱了么 App 图标" />
 
 图标已经生成到 `static/app-icon.png`，并按 Android/iOS 云打包需要的尺寸生成到 `static/app-icons/`。`manifest.json` 里也配置好了图标路径，云打包时不用再临时翻文件夹找图标。
 

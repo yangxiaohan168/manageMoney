@@ -1,7 +1,7 @@
 {
-  "name": "manageMoney",
+  "name": "存钱了么",
   "appid": "__UNI__A104967",
-  "description": "一起存钱",
+  "description": "存钱了么",
   "versionName": "1.0.0",
   "versionCode": "100",
   "transformPx": false,

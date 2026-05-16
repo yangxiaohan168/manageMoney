@@ -3,7 +3,7 @@
     {
       "path": "pages/money/index",
       "style": {
-        "navigationBarTitleText": "一起存钱",
+        "navigationBarTitleText": "存钱了么",
         "enablePullDownRefresh": false
       }
     },
@@ -16,7 +16,7 @@
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "一起存钱",
+    "navigationBarTitleText": "存钱了么",
     "navigationBarBackgroundColor": "#F8F8F8",
     "backgroundColor": "#F8F8F8"
   }

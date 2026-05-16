@@ -4,7 +4,7 @@
 
 		<view v-else-if="!authenticated" class="auth-page">
 			<view class="auth-card">
-				<view class="brand">一起存钱</view>
+				<view class="brand">存钱了么</view>
 				<view class="auth-title">{{ hasPassword ? '输入管理密码' : '首次设置管理密码' }}</view>
 				<view class="auth-desc">
 					{{ hasPassword ? '本机缓存验证通过后可直接进入。' : '密码会加密存入云数据库，用于保护账本。' }}
