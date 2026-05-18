@@ -65,10 +65,6 @@
 							<view class="section-subtitle">普通收支、存款和人情收支合并展示</view>
 						</view>
 						<view class="header-actions">
-							<view class="refresh" @click="loadAll">
-								<uni-icons type="refresh" size="15" color="#667085"></uni-icons>
-								<text>刷新</text>
-							</view>
 							<view class="add-record-btn" @click="openRecordForm('expense')">
 								<uni-icons type="plus" size="15" color="#ffffff"></uni-icons>
 								<text>支出</text>
@@ -1683,14 +1679,6 @@ export default {
 	display: flex;
 	align-items: center;
 	gap: 10rpx;
-}
-
-.refresh {
-	color: #667085;
-	font-size: 24rpx;
-	display: flex;
-	align-items: center;
-	gap: 6rpx;
 }
 
 .header-actions {
