@@ -43,8 +43,10 @@
 | 月账 | 统计 |
 | --- | --- |
 | ![月账](./static/1.png) | ![统计](./static/2.png) |
-| 存款 | 人情收支 |
-| ![存款](./static/3.png) | ![人情收支](./static/4.png) |
+| 存款 | 债务 |
+| ![存款](./static/3.png) | ![债务](./static/debt.png) |
+| 人情收支 |  |
+| ![人情收支](./static/4.png) |  |
 
 ## 功能介绍
 
@@ -53,7 +55,7 @@
 - 支持设置工资日，比如 5 号、15 号，按发薪日作为账期开始。
 - 首页展示当前工资周期的收入、支出、剩余经费。
 - 支持选择月份，查看任意工资周期的收支情况。
-- 普通收入、普通支出、存款、人情收支会合并展示在月账明细里。
+- 普通收入、普通支出、还债支出、存款和人情收支会合并展示在月账明细里。
 
 ### 预支记录
 
@@ -66,6 +68,12 @@
 - 支持新增、编辑、删除存款记录。
 - 存款会作为当月支出扣掉，因为这笔钱虽然还在你名下，但已经被押送进小金库了。
 - 单独展示累计存款，每多一笔，离“老板我先撤了”理论上近一点点。
+
+### 债务
+
+- 支持新增、编辑债务项目，比如白条、分付、信用卡分期。
+- 新增支出时可以标记为还债支出，并选择要还的债务。
+- 还债支出会正常计入当月支出，同时自动扣减对应债务的剩余负债。
 
 ### 人情收支
 
@@ -99,7 +107,7 @@
 
 ```text
 manageMoney
-├─ pages/money/index.vue                         # 账本首页：月账、统计、存款、人情
+├─ pages/money/index.vue                         # 账本首页：月账、统计、存款、债务、人情
 ├─ pages/money/friend.vue                        # 朋友人情明细页
 ├─ uniCloud-aliyun/cloudfunctions/money-api/     # 账本业务云函数
 ├─ uniCloud-aliyun/database/                     # 账本数据库 Schema
@@ -108,6 +116,7 @@ manageMoney
 ├─ static/app-icons/                             # Android/iOS 云打包图标
 ├─ static/app-pack-1.png                         # App 云打包示例截图
 ├─ static/app-pack-2.png                         # App 打包成功示例截图
+├─ static/debt.png                               # 债务页截图
 ├─ manifest.json                                 # App/H5 配置
 └─ pages.json                                    # 页面路由配置
 ```
