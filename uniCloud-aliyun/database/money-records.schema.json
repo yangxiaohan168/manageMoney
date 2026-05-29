@@ -49,6 +49,19 @@
 			"title": "备注",
 			"maxLength": 100
 		},
+		"is_debt_repayment": {
+			"bsonType": "bool",
+			"title": "是否还债支出"
+		},
+		"debt_id": {
+			"bsonType": "string",
+			"title": "债务ID"
+		},
+		"debt_name": {
+			"bsonType": "string",
+			"title": "债务名称",
+			"maxLength": 40
+		},
 		"occurred_at": {
 			"bsonType": "timestamp",
 			"title": "发生时间"

@@ -6,6 +6,7 @@ const settingsCollection = db.collection('money-settings');
 const recordsCollection = db.collection('money-records');
 const humanRecordsCollection = db.collection('money-human-records');
 const friendsCollection = db.collection('money-friends');
+const debtsCollection = db.collection('money-debts');
 
 const SETTINGS_KEY = 'default';
 const TOKEN_MAX_AGE = 1000 * 60 * 60 * 24 * 30;
@@ -193,6 +194,156 @@ async function updateBookConfig(payload = {}) {
 	return ok({ cycleStartDay, salaryAmount });
 }
 
+async function getDebtById(id) {
+	const res = await debtsCollection.doc(id).get();
+	return res.data && res.data[0];
+}
+
+async function getDebtPaidAmount(debtId) {
+	if (!debtId) return 0;
+	const $ = db.command.aggregate;
+	const res = await recordsCollection
+		.aggregate()
+		.match({
+			type: 'expense',
+			is_debt_repayment: true,
+			debt_id: debtId
+		})
+		.group({
+			_id: null,
+			sum: $.sum('$amount')
+		})
+		.end();
+	const row = res.data && res.data[0];
+	return row ? Number(row.sum || 0) : 0;
+}
+
+async function getDebtPaidMap() {
+	const $ = db.command.aggregate;
+	const res = await recordsCollection
+		.aggregate()
+		.match({
+			type: 'expense',
+			is_debt_repayment: true
+		})
+		.group({
+			_id: '$debt_id',
+			sum: $.sum('$amount')
+		})
+		.end();
+	return (res.data || []).reduce((map, row) => {
+		if (row._id) map[row._id] = Number(row.sum || 0);
+		return map;
+	}, {});
+}
+
+function normalizeDebtForClient(debt = {}, paidMap = {}) {
+	const initialAmount = Number(debt.initial_amount || debt.amount || 0);
+	const rawPaidAmount = Number(paidMap[debt._id] || 0);
+	const paidAmount = Math.min(Math.max(rawPaidAmount, 0), initialAmount);
+	return {
+		...debt,
+		initial_amount: initialAmount,
+		paid_amount: paidAmount,
+		amount: Math.max(initialAmount - paidAmount, 0)
+	};
+}
+
+async function normalizeDebtRepaymentFields(payload = {}, type, amount, existingRecord = null) {
+	const isDebtRepayment = type === 'expense' && !!payload.isDebtRepayment;
+	if (!isDebtRepayment) {
+		return {
+			is_debt_repayment: false,
+			debt_id: '',
+			debt_name: ''
+		};
+	}
+
+	const debtId = String(payload.debtId || payload.debt_id || '').trim();
+	if (!debtId) throw new Error('请选择要还的债务');
+
+	const debt = await getDebtById(debtId);
+	if (!debt) throw new Error('债务不存在或已删除');
+
+	const initialAmount = Number(debt.initial_amount || debt.amount || 0);
+	let paidAmount = await getDebtPaidAmount(debtId);
+	if (
+		existingRecord &&
+		existingRecord.type === 'expense' &&
+		existingRecord.is_debt_repayment &&
+		existingRecord.debt_id === debtId
+	) {
+		paidAmount -= Number(existingRecord.amount || 0);
+	}
+	const remainingAmount = Math.max(initialAmount - Math.max(paidAmount, 0), 0);
+	if (amount > remainingAmount) {
+		throw new Error(`还款金额不能超过「${debt.name}」剩余负债`);
+	}
+
+	return {
+		is_debt_repayment: true,
+		debt_id: debtId,
+		debt_name: debt.name || String(payload.debtName || payload.debt_name || '').trim()
+	};
+}
+
+async function listDebts() {
+	const [debtRes, paidMap] = await Promise.all([
+		debtsCollection.orderBy('updated_at', 'desc').orderBy('created_at', 'desc').limit(500).get(),
+		getDebtPaidMap()
+	]);
+	const debts = (debtRes.data || []).map((debt) => normalizeDebtForClient(debt, paidMap));
+	const totalAmount = debts.reduce((sum, debt) => sum + Number(debt.amount || 0), 0);
+	const activeCount = debts.filter((debt) => Number(debt.amount || 0) > 0).length;
+	return ok({ debts, totalAmount, activeCount });
+}
+
+async function upsertDebt(payload = {}) {
+	const id = String(payload.id || '').trim();
+	const name = String(payload.name || '').trim();
+	if (!name) return fail('请输入债务名称');
+	const note = String(payload.note || '').trim();
+	let initialAmount = 0;
+	try {
+		initialAmount = normalizeAmountToCents(payload.amount);
+	} catch (e) {
+		return fail(e.message);
+	}
+
+	const ts = now();
+	if (id) {
+		const debt = await getDebtById(id);
+		if (!debt) return fail('债务不存在或已删除');
+		const exists = await debtsCollection.where({ name }).limit(1).get();
+		if (exists.data && exists.data[0] && exists.data[0]._id !== id) return fail('债务名称已存在');
+		const paidAmount = await getDebtPaidAmount(id);
+		if (initialAmount < paidAmount) {
+			return fail('负债总额不能小于已还金额');
+		}
+		await debtsCollection.doc(id).update({ name, note, initial_amount: initialAmount, updated_at: ts });
+		if (name !== debt.name) {
+			await recordsCollection.where({ type: 'expense', is_debt_repayment: true, debt_id: id }).update({ debt_name: name });
+		}
+		return ok({ id });
+	}
+
+	const exists = await debtsCollection.where({ name }).limit(1).get();
+	if (exists.data && exists.data[0]) return fail('债务名称已存在');
+	const res = await debtsCollection.add({ name, note, initial_amount: initialAmount, created_at: ts, updated_at: ts });
+	return ok({ id: res.id });
+}
+
+async function deleteDebt(payload = {}) {
+	const id = String(payload.id || '').trim();
+	if (!id) return fail('债务ID不能为空');
+	const paidAmount = await getDebtPaidAmount(id);
+	if (paidAmount > 0) {
+		return fail('已有还债记录，不能删除该债务');
+	}
+	await debtsCollection.doc(id).remove();
+	return ok({ id });
+}
+
 async function createRecord(payload = {}) {
 	const type = payload.type;
 	if (!['income', 'expense', 'deposit', 'advance'].includes(type)) {
@@ -210,12 +361,20 @@ async function createRecord(payload = {}) {
 		return fail(e.message);
 	}
 
+	let debtFields = {};
+	try {
+		debtFields = await normalizeDebtRepaymentFields(payload, type, amount);
+	} catch (e) {
+		return fail(e.message);
+	}
+
 	const createdAt = now();
 	const record = {
 		type,
 		name,
 		amount,
 		note: String(payload.note || '').trim(),
+		...debtFields,
 		occurred_at: Number(payload.occurredAt || createdAt),
 		created_at: createdAt,
 		updated_at: createdAt
@@ -227,6 +386,10 @@ async function createRecord(payload = {}) {
 async function updateRecord(payload = {}) {
 	const id = String(payload.id || '').trim();
 	if (!id) return fail('记录ID不能为空');
+	const currentRes = await recordsCollection.doc(id).get();
+	const currentRecord = currentRes.data && currentRes.data[0];
+	if (!currentRecord) return fail('记录不存在或已删除');
+
 	const type = payload.type;
 	if (!['income', 'expense', 'deposit', 'advance'].includes(type)) {
 		return fail('记录类型不正确');
@@ -241,12 +404,20 @@ async function updateRecord(payload = {}) {
 		return fail(e.message);
 	}
 
+	let debtFields = {};
+	try {
+		debtFields = await normalizeDebtRepaymentFields(payload, type, amount, currentRecord);
+	} catch (e) {
+		return fail(e.message);
+	}
+
 	const occurredAt = Number(payload.occurredAt || 0);
 	const updateData = {
 		type,
 		name,
 		amount,
 		note: String(payload.note || '').trim(),
+		...debtFields,
 		updated_at: now()
 	};
 	if (Number.isFinite(occurredAt) && occurredAt > 0) {
@@ -729,6 +900,9 @@ exports.main = async (event = {}) => {
 
 		if (action === 'getBookConfig') return await getBookConfig();
 		if (action === 'updateBookConfig') return await updateBookConfig(payload);
+		if (action === 'listDebts') return await listDebts();
+		if (action === 'upsertDebt') return await upsertDebt(payload);
+		if (action === 'deleteDebt') return await deleteDebt(payload);
 		if (action === 'createRecord') return await createRecord(payload);
 		if (action === 'updateRecord') return await updateRecord(payload);
 		if (action === 'deleteRecord') return await deleteRecord(payload);

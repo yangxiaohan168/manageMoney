@@ -296,7 +296,65 @@
 					<view v-else-if="depositLoading" class="empty">加载中...</view>
 				</view>
 
-				<view v-else class="panel">
+				<view v-else-if="activeTab === 'debt'" class="panel">
+					<view class="section-header">
+						<view>
+							<view class="section-title">债务</view>
+							<view class="section-subtitle">记录白条、分付、信用卡等待还负债</view>
+						</view>
+						<view class="header-actions">
+							<view class="add-record-btn add-record-btn-debt" @click="openDebtForm()">
+								<uni-icons type="plus" size="15" color="#ffffff"></uni-icons>
+								<text>新增债务</text>
+							</view>
+						</view>
+					</view>
+					<view class="summary-strip">
+						<view>
+							<text>剩余负债</text>
+							<strong class="danger-text">{{ formatMoney(debtTotal) }}</strong>
+						</view>
+						<view>
+							<text>未还项目</text>
+							<strong>{{ debtActiveCount }}</strong>
+						</view>
+					</view>
+					<view v-if="!debtList.length && !debtLoading" class="empty">还没有债务，先新增一个吧。</view>
+					<view v-else-if="debtList.length" class="timeline">
+						<uni-swipe-action>
+							<uni-swipe-action-item
+								v-for="debt in debtList"
+								:key="debt._id"
+								:right-options="recordActionOptions"
+								@click="onDebtActionClick($event, debt)"
+							>
+								<view class="record-item">
+									<view class="record-dot compact-dot record-dot-debt">
+										<uni-icons type="shop-filled" size="17" color="#b54708"></uni-icons>
+									</view>
+									<view class="record-main">
+										<view class="record-name">{{ debt.name }}</view>
+										<view class="record-note">
+											已还 {{ formatMoney(debt.paid_amount) }} / 总额 {{ formatMoney(debt.initial_amount) }}{{ debt.note ? ' · ' + debt.note : '' }}
+										</view>
+										<view class="debt-progress">
+											<view class="debt-progress-fill" :style="{ width: debtProgress(debt) + '%' }"></view>
+										</view>
+									</view>
+									<view class="record-side">
+										<view :class="['record-amount', Number(debt.amount || 0) > 0 ? 'danger-text' : 'positive-text']">
+											{{ formatMoney(debt.amount) }}
+										</view>
+										<view class="record-time">{{ Number(debt.amount || 0) > 0 ? '剩余' : '已还清' }}</view>
+									</view>
+								</view>
+							</uni-swipe-action-item>
+						</uni-swipe-action>
+					</view>
+					<view v-else-if="debtLoading" class="empty">加载中...</view>
+				</view>
+
+				<view v-else-if="activeTab === 'human'" class="panel">
 					<view class="section-header">
 						<view>
 							<view class="section-title">人情收支</view>
@@ -405,6 +463,10 @@
 					<uni-icons type="wallet-filled" size="23" :color="activeTab === 'deposit' ? '#282321' : '#667085'"></uni-icons>
 					<text>存款</text>
 				</view>
+				<view :class="['tab-item', activeTab === 'debt' ? 'active' : '']" @click="switchTab('debt')">
+					<uni-icons type="shop-filled" size="23" :color="activeTab === 'debt' ? '#282321' : '#667085'"></uni-icons>
+					<text>债务</text>
+				</view>
 				<view :class="['tab-item', activeTab === 'human' ? 'active' : '']" @click="switchTab('human')">
 					<uni-icons type="gift-filled" size="23" :color="activeTab === 'human' ? '#282321' : '#667085'"></uni-icons>
 					<text>人情</text>
@@ -416,12 +478,29 @@
 			<view class="modal">
 				<view class="modal-title">{{ recordModalTitle }}</view>
 				<view v-if="!convertingAdvanceId && recordForm.type !== 'deposit' && recordForm.type !== 'advance'" class="type-tabs">
-					<text :class="{ active: recordForm.type === 'income' }" @click="recordForm.type = 'income'">收入</text>
-					<text :class="{ active: recordForm.type === 'expense' }" @click="recordForm.type = 'expense'">支出</text>
+					<text :class="{ active: recordForm.type === 'income' }" @click="changeRecordType('income')">收入</text>
+					<text :class="{ active: recordForm.type === 'expense' }" @click="changeRecordType('expense')">支出</text>
 				</view>
 				<view v-else class="deposit-form-tip">{{ recordTypeTip }}</view>
 				<input class="input" v-model="recordForm.name" placeholder="记录名，如 工资 / 房租 / 买菜" />
 				<input class="input" type="digit" v-model="recordForm.amount" placeholder="金额，如 12.5" />
+				<view v-if="recordForm.type === 'expense'" class="debt-repay-block">
+					<view class="repay-switch-row">
+						<view>
+							<view class="repay-title">这是还债支出</view>
+							<view class="repay-subtitle">保存后会计入支出，并减少对应债务余额</view>
+						</view>
+						<switch :checked="recordForm.isDebtRepayment" color="#282321" @change="onDebtRepaymentToggle" />
+					</view>
+					<picker
+						v-if="recordForm.isDebtRepayment"
+						:range="debtPickerNames"
+						:value="repaymentDebtPickerIndex"
+						@change="onSelectRepaymentDebt"
+					>
+						<view class="picker">{{ recordForm.debtName || '请选择要还的债务' }}</view>
+					</picker>
+				</view>
 				<picker mode="date" :value="recordForm.occurredDate" @change="recordForm.occurredDate = $event.detail.value">
 					<view class="picker">{{ recordForm.occurredDate }}</view>
 				</picker>
@@ -432,6 +511,19 @@
 				<view class="modal-actions">
 					<button @click="closeRecordForm">取消</button>
 					<button class="primary-btn" :loading="submitting" @click="submitRecord">{{ recordSubmitText }}</button>
+				</view>
+			</view>
+		</view>
+
+		<view v-if="showDebtForm" class="modal-mask">
+			<view class="modal">
+				<view class="modal-title">{{ editingDebtId ? '编辑债务' : '新增债务' }}</view>
+				<input class="input" v-model="debtForm.name" placeholder="债务名称，如 京东白条 / 微信分付" />
+				<input class="input" type="digit" v-model="debtForm.amount" placeholder="负债总额，如 3000" />
+				<input class="input" v-model="debtForm.note" placeholder="备注，可不填" />
+				<view class="modal-actions">
+					<button @click="showDebtForm = false">取消</button>
+					<button class="primary-btn" :loading="submitting" @click="submitDebt">保存</button>
 				</view>
 			</view>
 		</view>
@@ -511,6 +603,10 @@ export default {
 			depositTotal: 0,
 			depositHasMore: false,
 			depositLoading: false,
+			debtList: [],
+			debtTotal: 0,
+			debtActiveCount: 0,
+			debtLoading: false,
 			humanSubTab: 'records',
 			humanSummary: { income: 0, expense: 0, net: 0 },
 			humanRecords: [],
@@ -522,6 +618,7 @@ export default {
 			refreshing: false,
 			editingRecordId: '',
 			convertingAdvanceId: '',
+			editingDebtId: '',
 			editingHumanRecordId: '',
 			editingFriendId: '',
 			recordActionOptions: [
@@ -534,6 +631,7 @@ export default {
 				{ text: '删除', style: { backgroundColor: '#c8171d' } }
 			],
 			showRecordForm: false,
+			showDebtForm: false,
 			showHumanRecordForm: false,
 			showFriendForm: false,
 			recordForm: {
@@ -541,8 +639,16 @@ export default {
 				name: '',
 				amount: '',
 				note: '',
+				isDebtRepayment: false,
+				debtId: '',
+				debtName: '',
 				occurredDate: '',
 				occurredTime: ''
+			},
+			debtForm: {
+				name: '',
+				amount: '',
+				note: ''
 			},
 			humanRecordForm: {
 				type: 'human_expense',
@@ -624,6 +730,14 @@ export default {
 		},
 		recentExpenseChartReady() {
 			return this.recentExpenseStats.some((item) => Number(item.expense || 0) > 0);
+		},
+		debtPickerNames() {
+			return this.debtList.map((item) => `${item.name}（剩余${this.formatMoney(item.amount)}）`);
+		},
+		repaymentDebtPickerIndex() {
+			if (!this.recordForm.debtId) return 0;
+			const idx = this.debtList.findIndex((item) => item._id === this.recordForm.debtId);
+			return idx < 0 ? 0 : idx;
 		},
 		friendPickerNames() {
 			return this.friends.map((item) => item.name);
@@ -810,6 +924,7 @@ export default {
 				await this.loadCycleData();
 				await Promise.all([
 					this.fetchDepositRecords(true),
+					this.loadDebts(),
 					this.fetchHumanRecords(true),
 					this.loadFriends(),
 					this.loadHumanSummary()
@@ -915,6 +1030,19 @@ export default {
 			const data = await this.callMoney('listFriends');
 			this.friends = data.friends || [];
 		},
+		async loadDebts() {
+			this.debtLoading = true;
+			try {
+				const data = await this.callMoney('listDebts');
+				this.debtList = data.debts || [];
+				this.debtTotal = Number(data.totalAmount || 0);
+				this.debtActiveCount = Number(data.activeCount || 0);
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.debtLoading = false;
+			}
+		},
 		async fetchHumanRecords(reset, friendId = '') {
 			if (this.humanLoading) return;
 			if (reset) {
@@ -978,6 +1106,9 @@ export default {
 					name: record.name || '',
 					amount: (Number(record.amount || 0) / 100).toString(),
 					note: record.note || '',
+					isDebtRepayment: !!record.is_debt_repayment,
+					debtId: record.debt_id || '',
+					debtName: record.debt_name || '',
 					occurredDate: this.formatDateInput(record.occurred_at || Date.now()),
 					occurredTime: this.formatTimeInput(record.occurred_at || Date.now())
 				};
@@ -990,6 +1121,9 @@ export default {
 				name: '',
 				amount: '',
 				note: '',
+				isDebtRepayment: false,
+				debtId: '',
+				debtName: '',
 				occurredDate: type === 'deposit' ? this.formatDateInput(Date.now()) : this.getDefaultRecordDate(),
 				occurredTime: this.formatTimeInput(Date.now())
 			};
@@ -1003,10 +1137,51 @@ export default {
 				name: record.name || '',
 				amount: (Number(record.amount || 0) / 100).toString(),
 				note: record.note || '',
+				isDebtRepayment: false,
+				debtId: '',
+				debtName: '',
 				occurredDate: this.formatDateInput(record.occurred_at || Date.now()),
 				occurredTime: this.formatTimeInput(record.occurred_at || Date.now())
 			};
 			this.showRecordForm = true;
+		},
+		changeRecordType(type) {
+			this.recordForm.type = type;
+			if (type !== 'expense') {
+				this.recordForm.isDebtRepayment = false;
+				this.recordForm.debtId = '';
+				this.recordForm.debtName = '';
+			}
+		},
+		onDebtRepaymentToggle(e) {
+			const checked = !!(e && e.detail && e.detail.value);
+			if (checked && !this.debtList.length) {
+				this.recordForm.isDebtRepayment = false;
+				return uni.showToast({ title: '请先新增债务', icon: 'none' });
+			}
+			this.recordForm.isDebtRepayment = checked;
+			if (!checked) {
+				this.recordForm.debtId = '';
+				this.recordForm.debtName = '';
+				return;
+			}
+			if (!this.recordForm.debtId && this.debtList[0]) {
+				this.recordForm.debtId = this.debtList[0]._id;
+				this.recordForm.debtName = this.debtList[0].name;
+				if (!this.recordForm.name.trim()) {
+					this.recordForm.name = `还${this.debtList[0].name}`;
+				}
+			}
+		},
+		onSelectRepaymentDebt(e) {
+			const index = Number(e.detail.value || 0);
+			const debt = this.debtList[index];
+			if (!debt) return;
+			this.recordForm.debtId = debt._id;
+			this.recordForm.debtName = debt.name;
+			if (!this.recordForm.name.trim()) {
+				this.recordForm.name = `还${debt.name}`;
+			}
 		},
 		closeRecordForm() {
 			this.showRecordForm = false;
@@ -1020,6 +1195,9 @@ export default {
 			if (!this.recordForm.amount) {
 				return uni.showToast({ title: '请输入金额', icon: 'none' });
 			}
+			if (this.recordForm.type === 'expense' && this.recordForm.isDebtRepayment && !this.recordForm.debtId) {
+				return uni.showToast({ title: '请选择要还的债务', icon: 'none' });
+			}
 			this.submitting = true;
 			try {
 				const isEdit = !!this.editingRecordId;
@@ -1029,6 +1207,9 @@ export default {
 					name: this.recordForm.name,
 					amount: this.recordForm.amount,
 					note: this.recordForm.note,
+					isDebtRepayment: this.recordForm.type === 'expense' && !!this.recordForm.isDebtRepayment,
+					debtId: this.recordForm.debtId,
+					debtName: this.recordForm.debtName,
 					occurredAt: this.getRecordTimestamp()
 				};
 				if (this.editingRecordId) {
@@ -1088,6 +1269,63 @@ export default {
 					try {
 						await that.callMoney('deleteRecord', { id: record._id });
 						await that.loadAll();
+						uni.showToast({ title: '已删除', icon: 'success' });
+					} catch (e) {
+						uni.showToast({ title: e.message, icon: 'none' });
+					}
+				}
+			});
+		},
+		openDebtForm(debt = null) {
+			if (debt && debt._id) {
+				this.editingDebtId = debt._id;
+				this.debtForm = {
+					name: debt.name || '',
+					amount: (Number(debt.initial_amount || 0) / 100).toString(),
+					note: debt.note || ''
+				};
+			} else {
+				this.editingDebtId = '';
+				this.debtForm = { name: '', amount: '', note: '' };
+			}
+			this.showDebtForm = true;
+		},
+		async submitDebt() {
+			if (!this.debtForm.name.trim()) return uni.showToast({ title: '请输入债务名称', icon: 'none' });
+			if (!this.debtForm.amount) return uni.showToast({ title: '请输入负债总额', icon: 'none' });
+			this.submitting = true;
+			try {
+				await this.callMoney('upsertDebt', {
+					id: this.editingDebtId,
+					name: this.debtForm.name,
+					amount: this.debtForm.amount,
+					note: this.debtForm.note
+				});
+				this.showDebtForm = false;
+				this.editingDebtId = '';
+				await this.loadDebts();
+				uni.showToast({ title: '已保存', icon: 'success' });
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.submitting = false;
+			}
+		},
+		async onDebtActionClick(e, debt) {
+			const idx = Number(e && e.index);
+			if (idx === 0) return this.openDebtForm(debt);
+			if (idx === 1) return this.removeDebt(debt);
+		},
+		async removeDebt(debt) {
+			const that = this;
+			uni.showModal({
+				title: '删除债务',
+				content: `确认删除「${debt.name}」吗？已有还债记录的债务不能删除。`,
+				success: async (res) => {
+					if (!res.confirm) return;
+					try {
+						await that.callMoney('deleteDebt', { id: debt._id });
+						await that.loadDebts();
 						uni.showToast({ title: '已删除', icon: 'success' });
 					} catch (e) {
 						uni.showToast({ title: e.message, icon: 'none' });
@@ -1382,6 +1620,12 @@ export default {
 			const date = new Date(timestamp || Date.now());
 			return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 		},
+		debtProgress(debt) {
+			const total = Number(debt.initial_amount || 0);
+			if (total <= 0) return 0;
+			const paid = Number(debt.paid_amount || 0);
+			return Math.min(Math.max(Math.round((paid / total) * 100), 0), 100);
+		},
 		formatMoney(cents, withSign = false) {
 			const value = Number(cents || 0) / 100;
 			const abs = Math.abs(value);
@@ -1406,6 +1650,9 @@ export default {
 			return entry.name || '未命名';
 		},
 		entryTypeText(entry) {
+			if (entry.type === 'expense' && entry.is_debt_repayment) {
+				return `还债 · ${entry.debt_name || '未选债务'}`;
+			}
 			const map = {
 				income: '收入',
 				expense: '支出',
@@ -1422,16 +1669,19 @@ export default {
 		},
 		entryToneClass(entry) {
 			if (['income', 'human_income'].includes(entry.type)) return 'record-dot-income';
+			if (entry.type === 'expense' && entry.is_debt_repayment) return 'record-dot-debt';
 			if (['expense', 'human_expense'].includes(entry.type)) return 'record-dot-expense';
 			if (entry.type === 'advance') return 'record-dot-advance';
 			return 'record-dot-deposit';
 		},
 		entryIconType(entry) {
 			if (entry.source === 'human') return 'gift-filled';
+			if (entry.type === 'expense' && entry.is_debt_repayment) return 'shop-filled';
 			return { income: 'download-filled', expense: 'upload-filled', deposit: 'wallet-filled', advance: 'compose' }[entry.type] || 'compose';
 		},
 		entryIconColor(entry) {
 			if (['income', 'human_income'].includes(entry.type)) return '#12b76a';
+			if (entry.type === 'expense' && entry.is_debt_repayment) return '#b54708';
 			if (['expense', 'human_expense'].includes(entry.type)) return '#c8171d';
 			if (entry.type === 'advance') return '#667085';
 			return '#2563eb';
@@ -1728,6 +1978,10 @@ export default {
 	background: #b54708;
 }
 
+.add-record-btn-debt {
+	background: #9a3412;
+}
+
 .summary-strip {
 	gap: 16rpx;
 	margin: 24rpx 0;
@@ -1938,6 +2192,11 @@ export default {
 	border-color: #bfdbfe;
 }
 
+.record-dot-debt {
+	background: #fff7ed;
+	border-color: #fed7aa;
+}
+
 .record-dot-advance {
 	background: #f2f4f7;
 	border-color: #d0d5dd;
@@ -2034,6 +2293,21 @@ export default {
 	margin-bottom: 24rpx;
 }
 
+.debt-progress {
+	width: 100%;
+	height: 10rpx;
+	margin-top: 14rpx;
+	border-radius: 999rpx;
+	background: #f2f4f7;
+	overflow: hidden;
+}
+
+.debt-progress-fill {
+	height: 100%;
+	border-radius: 999rpx;
+	background: #12b76a;
+}
+
 .type-tabs {
 	display: flex;
 	gap: 18rpx;
@@ -2061,6 +2335,38 @@ export default {
 	background: #282321;
 	color: #ffffff;
 	font-size: 26rpx;
+}
+
+.debt-repay-block {
+	margin-bottom: 20rpx;
+	padding: 20rpx;
+	border-radius: 18rpx;
+	background: #fff7ed;
+}
+
+.repay-switch-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 18rpx;
+}
+
+.repay-title {
+	font-size: 28rpx;
+	font-weight: 700;
+	color: #282321;
+}
+
+.repay-subtitle {
+	margin-top: 6rpx;
+	font-size: 22rpx;
+	color: #9a3412;
+}
+
+.debt-repay-block .picker {
+	margin-top: 18rpx;
+	margin-bottom: 0;
+	background: #ffffff;
 }
 
 .modal-actions {
