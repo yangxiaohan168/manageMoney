@@ -12,6 +12,8 @@ const SETTINGS_KEY = 'default';
 const TOKEN_MAX_AGE = 1000 * 60 * 60 * 24 * 30;
 const DEFAULT_CYCLE_START_DAY = 5;
 const DEFAULT_SALARY_AMOUNT = 927000;
+const EXPORT_LEDGER_LIMIT = 5000;
+const EXPORT_QUERY_PAGE_SIZE = 100;
 
 function ok(data = {}, msg = 'ok') {
 	return { code: 0, msg, data };
@@ -45,11 +47,31 @@ function normalizeCycleStartDay(value) {
 	return day;
 }
 
+function normalizeLedgerStartAt(value, fallback = now()) {
+	const timestamp = Number(value || 0);
+	if (Number.isFinite(timestamp) && timestamp > 0) return timestamp;
+	return fallback;
+}
+
 function getConfigFromSetting(setting = {}) {
 	return {
 		cycleStartDay: normalizeCycleStartDay(setting.cycle_start_day || DEFAULT_CYCLE_START_DAY),
-		salaryAmount: Number(setting.salary_amount || DEFAULT_SALARY_AMOUNT)
+		salaryAmount: Number(setting.salary_amount || DEFAULT_SALARY_AMOUNT),
+		ledgerStartAt: normalizeLedgerStartAt(setting.ledger_start_at)
 	};
+}
+
+async function ensureLedgerStartAt(setting = {}) {
+	const ledgerStartAt = Number(setting.ledger_start_at || 0);
+	if (Number.isFinite(ledgerStartAt) && ledgerStartAt > 0) return ledgerStartAt;
+	const createdAt = now();
+	if (setting._id) {
+		await settingsCollection.doc(setting._id).update({
+			ledger_start_at: createdAt,
+			updated_at: createdAt
+		});
+	}
+	return createdAt;
 }
 
 function hashPassword(password, salt) {
@@ -133,6 +155,7 @@ async function setupPassword(payload = {}) {
 		token_version: 1,
 		cycle_start_day: DEFAULT_CYCLE_START_DAY,
 		salary_amount: DEFAULT_SALARY_AMOUNT,
+		ledger_start_at: createdAt,
 		created_at: createdAt,
 		updated_at: createdAt
 	};
@@ -165,6 +188,9 @@ async function verifyToken(payload = {}) {
 
 async function getBookConfig() {
 	const setting = await getSetting();
+	if (setting) {
+		setting.ledger_start_at = await ensureLedgerStartAt(setting);
+	}
 	return ok(getConfigFromSetting(setting || {}));
 }
 
@@ -175,12 +201,17 @@ async function updateBookConfig(payload = {}) {
 	const currentConfig = getConfigFromSetting(setting);
 	let cycleStartDay = currentConfig.cycleStartDay;
 	let salaryAmount = currentConfig.salaryAmount;
+	let ledgerStartAt = currentConfig.ledgerStartAt;
 	try {
 		if (payload.cycleStartDay !== undefined && payload.cycleStartDay !== null && payload.cycleStartDay !== '') {
 			cycleStartDay = normalizeCycleStartDay(payload.cycleStartDay);
 		}
 		if (payload.salaryAmount !== undefined && payload.salaryAmount !== null && payload.salaryAmount !== '') {
 			salaryAmount = normalizeAmountToCents(payload.salaryAmount);
+		}
+		if (payload.ledgerStartAt !== undefined && payload.ledgerStartAt !== null && payload.ledgerStartAt !== '') {
+			ledgerStartAt = normalizeLedgerStartAt(payload.ledgerStartAt, 0);
+			if (!ledgerStartAt) throw new Error('账期起点不正确');
 		}
 	} catch (e) {
 		return fail(e.message);
@@ -189,9 +220,10 @@ async function updateBookConfig(payload = {}) {
 	await settingsCollection.doc(setting._id).update({
 		cycle_start_day: cycleStartDay,
 		salary_amount: salaryAmount,
+		ledger_start_at: ledgerStartAt,
 		updated_at: now()
 	});
-	return ok({ cycleStartDay, salaryAmount });
+	return ok({ cycleStartDay, salaryAmount, ledgerStartAt });
 }
 
 async function getDebtById(id) {
@@ -651,6 +683,53 @@ function normalizeMonthlyEntry(record, source) {
 	return { ...record, source };
 }
 
+function normalizeExportLedgerEntry(record, source) {
+	const isHuman = source === 'human';
+	const type = record.type;
+	const direction = ['income', 'human_income'].includes(type) ? '收入' : '支出';
+	const isDebtRepayment = type === 'expense' && !!record.is_debt_repayment;
+	const typeTextMap = {
+		income: '收入',
+		expense: isDebtRepayment ? '还债支出' : '支出',
+		deposit: '存款',
+		advance: '预支',
+		human_income: '收礼',
+		human_expense: '送礼'
+	};
+	const amount = Number(record.amount || 0);
+	const signedAmount = direction === '收入' ? amount : -amount;
+	return {
+		id: record._id || '',
+		source,
+		sourceText: isHuman ? '人情' : '账本',
+		type,
+		typeText: typeTextMap[type] || '记录',
+		direction,
+		amount,
+		signedAmount,
+		occurredAt: Number(record.occurred_at || 0),
+		createdAt: Number(record.created_at || 0),
+		name: isHuman ? (record.friend_name || record.name || '人情记录') : (record.name || '未命名'),
+		note: record.note || '',
+		debtName: record.debt_name || ''
+	};
+}
+
+async function fetchAllByCondition(collection, condition, total) {
+	const rows = [];
+	for (let skip = 0; skip < total; skip += EXPORT_QUERY_PAGE_SIZE) {
+		const res = await collection
+			.where(condition)
+			.orderBy('occurred_at', 'asc')
+			.orderBy('created_at', 'asc')
+			.skip(skip)
+			.limit(EXPORT_QUERY_PAGE_SIZE)
+			.get();
+		rows.push(...(res.data || []));
+	}
+	return rows;
+}
+
 async function listMonthlyEntries(payload = {}) {
 	const pageSize = Math.min(Math.max(Number(payload.pageSize) || 10, 1), 50);
 	const page = Math.max(Number(payload.page) || 1, 1);
@@ -696,6 +775,52 @@ async function listMonthlyEntries(payload = {}) {
 	const total = Number(recordCountRes.total || 0) + Number(humanCountRes.total || 0);
 	const entries = merged.slice(skip, skip + pageSize);
 	return ok({ entries, records: entries, total, page, pageSize, hasMore: skip + entries.length < total });
+}
+
+async function exportLedgerEntries(payload = {}) {
+	const startAt = Number(payload.startAt || 0);
+	const endAt = Number(payload.endAt || 0);
+	if (!startAt || !endAt || endAt <= startAt) return fail('导出时间范围不正确');
+
+	const _ = db.command;
+	const range = { occurred_at: _.gte(startAt).and(_.lt(endAt)) };
+	const recordCond = { type: _.in(['income', 'expense', 'deposit', 'advance']), ...range };
+	const humanCond = { type: _.in(['human_income', 'human_expense']), ...range };
+
+	const [recordCountRes, humanCountRes] = await Promise.all([
+		recordsCollection.where(recordCond).count(),
+		humanRecordsCollection.where(humanCond).count()
+	]);
+	const total = Number(recordCountRes.total || 0) + Number(humanCountRes.total || 0);
+	if (total > EXPORT_LEDGER_LIMIT) {
+		return fail(`本次导出共 ${total} 条，超过 ${EXPORT_LEDGER_LIMIT} 条，请缩小时间范围`);
+	}
+
+	const [recordRows, humanRows] = await Promise.all([
+		fetchAllByCondition(recordsCollection, recordCond, Number(recordCountRes.total || 0)),
+		fetchAllByCondition(humanRecordsCollection, humanCond, Number(humanCountRes.total || 0))
+	]);
+	const entries = [
+		...recordRows.map((item) => normalizeExportLedgerEntry(item, 'record')),
+		...humanRows.map((item) => normalizeExportLedgerEntry(item, 'human'))
+	].sort((a, b) => {
+		const occurredDiff = Number(a.occurredAt || 0) - Number(b.occurredAt || 0);
+		if (occurredDiff) return occurredDiff;
+		const createdDiff = Number(a.createdAt || 0) - Number(b.createdAt || 0);
+		if (createdDiff) return createdDiff;
+		return String(a.id || '').localeCompare(String(b.id || ''));
+	});
+	const totals = entries.reduce(
+		(acc, entry) => {
+			const signedAmount = Number(entry.signedAmount || 0);
+			if (signedAmount >= 0) acc.income += signedAmount;
+			else acc.expense += Math.abs(signedAmount);
+			acc.net += signedAmount;
+			return acc;
+		},
+		{ income: 0, expense: 0, net: 0 }
+	);
+	return ok({ entries, totals, total, limit: EXPORT_LEDGER_LIMIT, startAt, endAt });
 }
 
 async function getRangeStats(payload = {}) {
@@ -786,11 +911,26 @@ async function getSummary(payload = {}) {
 
 	const totals = {
 		deposit: 0,
+		regularIncome: 0,
+		humanIncome: 0,
+		regularExpense: 0,
+		humanExpense: 0,
+		advance: 0,
+		availableFunds: 0,
 		periodIncome: 0,
 		periodExpense: 0,
 		periodDeposit: 0,
 		periodAdvance: 0,
 		periodNet: 0
+	};
+	const ledger = {
+		regularIncome: 0,
+		humanIncome: 0,
+		regularExpense: 0,
+		humanExpense: 0,
+		deposit: 0,
+		advance: 0,
+		availableFunds: 0
 	};
 
 	const depositAllRes = await recordsCollection
@@ -832,10 +972,30 @@ async function getSummary(payload = {}) {
 			const row = res.data && res.data[0];
 			return row ? Number(row.sum || 0) : 0;
 		};
-		totals.periodIncome = pick(incRes) + humanIncome;
-		totals.periodExpense = pick(expRes) + humanExpense + pick(depRes);
-		totals.periodDeposit = pick(depRes);
-		totals.periodAdvance = pick(advanceRes);
+		const regularIncome = pick(incRes);
+		const regularExpense = pick(expRes);
+		const periodDeposit = pick(depRes);
+		const periodAdvance = pick(advanceRes);
+		const availableFunds = regularIncome + humanIncome - regularExpense - humanExpense - periodDeposit - periodAdvance;
+
+		ledger.regularIncome = regularIncome;
+		ledger.humanIncome = humanIncome;
+		ledger.regularExpense = regularExpense;
+		ledger.humanExpense = humanExpense;
+		ledger.deposit = periodDeposit;
+		ledger.advance = periodAdvance;
+		ledger.availableFunds = availableFunds;
+
+		totals.regularIncome = regularIncome;
+		totals.humanIncome = humanIncome;
+		totals.regularExpense = regularExpense;
+		totals.humanExpense = humanExpense;
+		totals.advance = periodAdvance;
+		totals.availableFunds = availableFunds;
+		totals.periodIncome = regularIncome + humanIncome;
+		totals.periodExpense = regularExpense + humanExpense + periodDeposit;
+		totals.periodDeposit = periodDeposit;
+		totals.periodAdvance = periodAdvance;
 
 		if (includeNameStats) {
 			const statsRes = await recordsCollection
@@ -883,7 +1043,7 @@ async function getSummary(payload = {}) {
 	}
 
 	totals.periodNet = totals.periodIncome - totals.periodExpense;
-	const data = { totals };
+	const data = { totals, ledger, ...ledger };
 	if (includeNameStats) data.nameStats = nameStats;
 	return ok(data);
 }
@@ -908,6 +1068,7 @@ exports.main = async (event = {}) => {
 		if (action === 'deleteRecord') return await deleteRecord(payload);
 		if (action === 'listRecords') return await listRecords(payload);
 		if (action === 'listMonthlyEntries') return await listMonthlyEntries(payload);
+		if (action === 'exportLedgerEntries') return await exportLedgerEntries(payload);
 		if (action === 'getRangeStats') return await getRangeStats(payload);
 		if (action === 'getDailyStats') return await getDailyStats(payload);
 		if (action === 'getSummary') return await getSummary(payload);

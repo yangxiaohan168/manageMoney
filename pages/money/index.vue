@@ -29,31 +29,41 @@
 				<view v-if="activeTab === 'month'" class="hero-card">
 					<view class="hero-top">
 						<view>
-							<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
-								<view class="hero-date hero-date-action">
-									<uni-icons type="calendar-filled" size="19" color="#ffffff"></uni-icons>
-									<text>{{ cycleTitle }}</text>
-								</view>
-							</picker>
-							<view class="hero-profit-label">{{ cycleRangeLabel }}</view>
+							<view class="hero-date">
+								<uni-icons type="wallet-filled" size="19" color="#ffffff"></uni-icons>
+								<text>目前可花</text>
+							</view>
+							<view class="hero-profit-label">{{ ledgerRangeLabel }}</view>
 						</view>
-						<picker mode="selector" :range="cycleStartDayOptions" :value="cycleStartDay - 1" @change="changeCycleStartDay">
-							<view class="hero-chip">{{ cycleStartDay }}号起</view>
-						</picker>
+						<view class="hero-chip hero-chip-action" @click="confirmStartNewLedger">开始新账期</view>
 					</view>
-					<view :class="['hero-profit-amount', cycleNet < 0 ? 'hero-profit-loss' : '']">
-						<text>{{ formatMoney(cycleNet, true) }}</text>
-						<text v-if="periodAdvance > 0" class="advance-minus">-{{ formatMoney(periodAdvance) }}</text>
-						<text v-if="periodAdvance > 0" :class="['advance-after', advanceAfterToneClass]">= {{ formatMoney(cycleNetAfterAdvance, true) }}</text>
+					<view :class="['hero-profit-amount', availableFunds < 0 ? 'hero-profit-loss' : '']">
+						<text>{{ formatMoney(availableFunds, true) }}</text>
 					</view>
-					<view class="hero-metrics">
+					<view class="hero-metrics ledger-metrics">
 						<view>
 							<text>收入</text>
-							<strong>{{ formatMoney(summary.totals.periodIncome) }}</strong>
+							<strong>{{ formatMoney(ledgerRegularIncome) }}</strong>
 						</view>
 						<view>
-							<text>支出</text>
-							<strong>{{ formatMoney(summary.totals.periodExpense) }}</strong>
+							<text>普通支出</text>
+							<strong>{{ formatMoney(ledgerRegularExpense) }}</strong>
+						</view>
+						<view>
+							<text>人情收入</text>
+							<strong>{{ formatMoney(ledgerHumanIncome) }}</strong>
+						</view>
+						<view>
+							<text>人情支出</text>
+							<strong>{{ formatMoney(ledgerHumanExpense) }}</strong>
+						</view>
+						<view>
+							<text>存款</text>
+							<strong>{{ formatMoney(ledgerDeposit) }}</strong>
+						</view>
+						<view>
+							<text>预支</text>
+							<strong>{{ formatMoney(ledgerAdvance) }}</strong>
 						</view>
 					</view>
 				</view>
@@ -61,8 +71,8 @@
 				<view v-if="activeTab === 'month'" class="panel">
 					<view class="section-header">
 						<view>
-							<view class="section-title">月账明细</view>
-							<view class="section-subtitle">普通收支、存款和人情收支合并展示</view>
+							<view class="section-title">流水明细</view>
+							<view class="section-subtitle">当前账期内的普通收支、存款和人情收支</view>
 						</view>
 						<view class="header-actions">
 							<view class="add-record-btn" @click="openRecordForm('expense')">
@@ -81,11 +91,11 @@
 					</view>
 
 					<view class="detail-tabs">
-						<text :class="{ active: monthlySubTab === 'regular' }" @click="switchMonthlySubTab('regular')">收支明细</text>
+						<text :class="{ active: monthlySubTab === 'regular' }" @click="switchMonthlySubTab('regular')">流水明细</text>
 						<text :class="{ active: monthlySubTab === 'advance' }" @click="switchMonthlySubTab('advance')">预支明细</text>
 					</view>
 
-					<view v-if="monthlySubTab === 'regular' && !monthlyEntries.length && !monthlyLoading" class="empty">这个周期还没有收支记录。</view>
+					<view v-if="monthlySubTab === 'regular' && !monthlyEntries.length && !monthlyLoading" class="empty">当前账期还没有流水记录。</view>
 					<view v-else-if="monthlySubTab === 'regular' && monthlyEntries.length" class="timeline">
 						<uni-swipe-action>
 							<uni-swipe-action-item
@@ -122,7 +132,7 @@
 					</view>
 					<view v-else-if="monthlySubTab === 'regular' && monthlyLoading" class="empty">加载中...</view>
 
-					<view v-if="monthlySubTab === 'advance' && !advanceEntries.length && !advanceLoading" class="empty">这个周期还没有预支记录。</view>
+					<view v-if="monthlySubTab === 'advance' && !advanceEntries.length && !advanceLoading" class="empty">当前账期还没有预支记录。</view>
 					<view v-else-if="monthlySubTab === 'advance' && advanceEntries.length" class="timeline">
 						<uni-swipe-action>
 							<uni-swipe-action-item
@@ -159,85 +169,67 @@
 				</view>
 
 				<view v-else-if="activeTab === 'stats'" class="panel stats-panel">
-					<view class="section-header compact-header">
+					<view class="section-header">
 						<view>
 							<view class="section-title section-title-icon">
-								<uni-icons type="bars" size="22" color="#2563eb"></uni-icons>
-								<text>月统计</text>
+								<uni-icons type="download-filled" size="22" color="#2563eb"></uni-icons>
+								<text>流水导出</text>
 							</view>
-							<view class="section-subtitle">{{ cycleRangeLabel }}</view>
-						</view>
-						<picker mode="date" fields="month" :value="selectedCycleMonth" @change="changeSelectedCycleMonth">
-							<view class="stats-month-pill">{{ cycleTitle }}</view>
-						</picker>
-					</view>
-
-					<view class="summary-grid">
-						<view class="summary-card">
-							<view class="summary-label">
-								<uni-icons type="download-filled" size="16" color="#12b76a"></uni-icons>
-								<text>月收入</text>
-							</view>
-							<strong>{{ formatMoney(summary.totals.periodIncome) }}</strong>
-						</view>
-						<view class="summary-card">
-							<view class="summary-label">
-								<uni-icons type="upload-filled" size="16" color="#c8171d"></uni-icons>
-								<text>月支出</text>
-							</view>
-							<strong class="danger-text">{{ formatMoney(summary.totals.periodExpense) }}</strong>
-						</view>
-						<view class="summary-card">
-							<view class="summary-label">
-								<uni-icons type="flag-filled" size="16" color="#f79009"></uni-icons>
-								<text>剩余经费</text>
-							</view>
-							<strong>
-								{{ formatMoney(cycleNet, true) }}
-								<text v-if="periodAdvance > 0" class="summary-advance-minus">-{{ formatMoney(periodAdvance) }}</text>
-								<text v-if="periodAdvance > 0" :class="['summary-advance-after', advanceAfterToneClass]">= {{ formatMoney(cycleNetAfterAdvance, true) }}</text>
-							</strong>
+							<view class="section-subtitle">{{ exportRangeLabel }}</view>
 						</view>
 					</view>
 
-					<view class="chart-section">
-						<view class="chart-header">
-							<view>
-								<view class="chart-title">最近5个月存款</view>
-								<view class="chart-subtitle">按工资周期统计存款记录</view>
-							</view>
+					<view class="export-form">
+						<view class="export-field">
+							<view class="export-label">开始日期</view>
+							<picker mode="date" :value="exportStartDate || todayDateInput" @change="exportStartDate = $event.detail.value">
+								<view :class="['picker', !exportStartDate ? 'picker-placeholder' : '']">{{ exportStartDate || '请选择开始日期' }}</view>
+							</picker>
 						</view>
-						<view v-if="monthlyDepositChartReady" class="daily-chart-card">
-							<qiun-data-charts
-								type="column"
-								canvas-id="monthlyDepositColumn"
-								:canvas2d="true"
-								:chartData="monthlyDepositChartData"
-								:opts="depositChartOpts"
-								background="rgba(0,0,0,0)"
-							></qiun-data-charts>
+						<view class="export-field">
+							<view class="export-label">结束日期</view>
+							<picker mode="date" :value="exportEndDate || todayDateInput" @change="exportEndDate = $event.detail.value">
+								<view :class="['picker', !exportEndDate ? 'picker-placeholder' : '']">{{ exportEndDate || '请选择结束日期' }}</view>
+							</picker>
 						</view>
-						<view v-else class="empty chart-empty">最近5个周期暂无存款记录。</view>
 					</view>
 
-					<view class="chart-section">
-						<view class="chart-header">
-							<view>
-								<view class="chart-title">最近5天支出</view>
-								<view class="chart-subtitle">包含普通支出、存款和人情送礼</view>
+					<button class="primary-btn export-btn" :loading="exporting" @click="exportLedgerCsv">
+						<uni-icons type="download-filled" size="17" color="#ffffff"></uni-icons>
+						<text>导出 CSV</text>
+					</button>
+
+					<view v-if="lastExportSummary" class="export-result">
+						<view class="summary-grid export-summary-grid">
+							<view class="summary-card">
+								<view class="summary-label">
+									<uni-icons type="bars" size="16" color="#2563eb"></uni-icons>
+									<text>条数</text>
+								</view>
+								<strong>{{ lastExportSummary.total }}</strong>
+							</view>
+							<view class="summary-card">
+								<view class="summary-label">
+									<uni-icons type="download-filled" size="16" color="#12b76a"></uni-icons>
+									<text>收入</text>
+								</view>
+								<strong>{{ formatMoney(lastExportSummary.income) }}</strong>
+							</view>
+							<view class="summary-card">
+								<view class="summary-label">
+									<uni-icons type="upload-filled" size="16" color="#c8171d"></uni-icons>
+									<text>支出</text>
+								</view>
+								<strong class="danger-text">{{ formatMoney(lastExportSummary.expense) }}</strong>
+							</view>
+							<view class="summary-card">
+								<view class="summary-label">
+									<uni-icons type="flag-filled" size="16" color="#f79009"></uni-icons>
+									<text>净额</text>
+								</view>
+								<strong>{{ formatMoney(lastExportSummary.net, true) }}</strong>
 							</view>
 						</view>
-						<view v-if="recentExpenseChartReady" class="daily-chart-card">
-							<qiun-data-charts
-								type="column"
-								canvas-id="recentExpenseColumn"
-								:canvas2d="true"
-								:chartData="recentExpenseChartData"
-								:opts="expenseChartOpts"
-								background="rgba(0,0,0,0)"
-							></qiun-data-charts>
-						</view>
-						<view v-else class="empty chart-empty">最近5天暂无支出记录。</view>
 					</view>
 				</view>
 
@@ -453,7 +445,7 @@
 			<view class="bottom-tabbar">
 				<view :class="['tab-item', activeTab === 'month' ? 'active' : '']" @click="switchTab('month')">
 					<uni-icons type="calendar-filled" size="23" :color="activeTab === 'month' ? '#282321' : '#667085'"></uni-icons>
-					<text>月账</text>
+					<text>流水</text>
 				</view>
 				<view :class="['tab-item', activeTab === 'stats' ? 'active' : '']" @click="switchTab('stats')">
 					<uni-icons type="bars" size="23" :color="activeTab === 'stats' ? '#282321' : '#667085'"></uni-icons>
@@ -585,7 +577,13 @@ export default {
 			monthlySubTab: 'regular',
 			selectedCycleMonth: '',
 			cycleStartDay: DEFAULT_CYCLE_START_DAY,
+			ledgerStartAt: 0,
 			summary: this.getEmptySummary(),
+			cycleSummary: this.getEmptySummary(),
+			exportStartDate: '',
+			exportEndDate: '',
+			exporting: false,
+			lastExportSummary: null,
 			monthlyEntries: [],
 			monthlyPage: 1,
 			monthlyTotal: 0,
@@ -671,6 +669,14 @@ export default {
 		cycleStartDayOptions() {
 			return Array.from({ length: 31 }, (_, index) => `${index + 1}号`);
 		},
+		todayDateInput() {
+			return this.formatDateInput(Date.now());
+		},
+		exportRangeLabel() {
+			if (!this.exportStartDate && !this.exportEndDate) return '选择日期范围';
+			if (this.exportStartDate && this.exportEndDate) return `${this.exportStartDate} 至 ${this.exportEndDate}`;
+			return this.exportStartDate ? `从 ${this.exportStartDate} 起` : `截至 ${this.exportEndDate}`;
+		},
 		cycleRange() {
 			return this.getCycleRangeByMonth(this.selectedCycleMonth, this.cycleStartDay);
 		},
@@ -682,13 +688,42 @@ export default {
 			const range = this.cycleRange;
 			return `${this.formatDateText(range.startAt)} 至 ${this.formatDateText(range.endAt - 1)}`;
 		},
+		ledgerRangeLabel() {
+			return `从 ${this.formatDateTimeText(this.ledgerStartAt)} 起`;
+		},
+		ledgerTotals() {
+			return (this.summary && this.summary.ledger) || {};
+		},
+		ledgerRegularIncome() {
+			return Number(this.ledgerTotals.regularIncome || 0);
+		},
+		ledgerHumanIncome() {
+			return Number(this.ledgerTotals.humanIncome || 0);
+		},
+		ledgerRegularExpense() {
+			return Number(this.ledgerTotals.regularExpense || 0);
+		},
+		ledgerHumanExpense() {
+			return Number(this.ledgerTotals.humanExpense || 0);
+		},
+		ledgerDeposit() {
+			return Number(this.ledgerTotals.deposit || 0);
+		},
+		ledgerAdvance() {
+			return Number(this.ledgerTotals.advance || 0);
+		},
+		availableFunds() {
+			const value = this.ledgerTotals.availableFunds;
+			if (value !== undefined && value !== null) return Number(value || 0);
+			return this.ledgerRegularIncome + this.ledgerHumanIncome - this.ledgerRegularExpense - this.ledgerHumanExpense - this.ledgerDeposit - this.ledgerAdvance;
+		},
 		cycleNet() {
-			const totals = this.summary && this.summary.totals;
+			const totals = this.cycleSummary && this.cycleSummary.totals;
 			if (!totals) return 0;
 			return Number(totals.periodNet || 0);
 		},
 		periodAdvance() {
-			const totals = this.summary && this.summary.totals;
+			const totals = this.cycleSummary && this.cycleSummary.totals;
 			return Number((totals && totals.periodAdvance) || 0);
 		},
 		cycleNetAfterAdvance() {
@@ -788,11 +823,26 @@ export default {
 			return {
 				totals: {
 					deposit: 0,
+					regularIncome: 0,
+					humanIncome: 0,
+					regularExpense: 0,
+					humanExpense: 0,
+					advance: 0,
+					availableFunds: 0,
 					periodIncome: 0,
 					periodExpense: 0,
 					periodDeposit: 0,
 					periodAdvance: 0,
 					periodNet: 0
+				},
+				ledger: {
+					regularIncome: 0,
+					humanIncome: 0,
+					regularExpense: 0,
+					humanExpense: 0,
+					deposit: 0,
+					advance: 0,
+					availableFunds: 0
 				}
 			};
 		},
@@ -802,6 +852,10 @@ export default {
 				totals: {
 					...empty.totals,
 					...(data.totals || {})
+				},
+				ledger: {
+					...empty.ledger,
+					...(data.ledger || {})
 				}
 			};
 		},
@@ -899,8 +953,10 @@ export default {
 			try {
 				const data = await this.callMoney('getBookConfig');
 				this.cycleStartDay = this.normalizeCycleStartDay(data.cycleStartDay);
+				this.ledgerStartAt = this.normalizeLedgerStartAt(data.ledgerStartAt);
 			} catch (e) {
 				this.cycleStartDay = DEFAULT_CYCLE_START_DAY;
+				this.ledgerStartAt = Date.now();
 			}
 			this.selectedCycleMonth = this.getDefaultCycleMonth(this.cycleStartDay);
 		},
@@ -911,6 +967,7 @@ export default {
 					cycleStartDay: this.cycleStartDay
 				});
 				this.cycleStartDay = this.normalizeCycleStartDay(data.cycleStartDay);
+				this.ledgerStartAt = this.normalizeLedgerStartAt(data.ledgerStartAt || this.ledgerStartAt);
 				await this.loadCycleData();
 				if (showToast) uni.showToast({ title: '工资日已保存', icon: 'success' });
 			} catch (e) {
@@ -921,8 +978,8 @@ export default {
 		},
 		async loadAll() {
 			try {
-				await this.loadCycleData();
 				await Promise.all([
+					this.loadLedgerData(),
 					this.fetchDepositRecords(true),
 					this.loadDebts(),
 					this.fetchHumanRecords(true),
@@ -933,21 +990,34 @@ export default {
 				uni.showToast({ title: e.message, icon: 'none' });
 			}
 		},
-		async loadCycleData() {
+		async loadLedgerData() {
 			await Promise.all([
 				this.loadSummary(),
 				this.fetchMonthlyEntries(true),
-				this.fetchAdvanceEntries(true),
+				this.fetchAdvanceEntries(true)
+			]);
+		},
+		async loadCycleData() {
+			await Promise.all([
+				this.loadCycleSummary(),
 				this.loadTrendStats()
 			]);
 		},
 		async loadSummary() {
-			const range = this.cycleRange;
+			const range = this.getLedgerRange();
 			const data = await this.callMoney('getSummary', {
 				startAt: range.startAt,
 				endAt: range.endAt
 			});
 			this.summary = this.normalizeSummary(data);
+		},
+		async loadCycleSummary() {
+			const range = this.cycleRange;
+			const data = await this.callMoney('getSummary', {
+				startAt: range.startAt,
+				endAt: range.endAt
+			});
+			this.cycleSummary = this.normalizeSummary(data);
 		},
 		async loadTrendStats() {
 			const depositRanges = this.getRecentCycleRanges(5);
@@ -972,7 +1042,7 @@ export default {
 			const page = reset ? 1 : this.monthlyPage + 1;
 			this.monthlyLoading = true;
 			try {
-				const range = this.cycleRange;
+				const range = this.getLedgerRange();
 				const data = await this.callMoney('listMonthlyEntries', {
 					startAt: range.startAt,
 					endAt: range.endAt,
@@ -1003,7 +1073,7 @@ export default {
 			const page = reset ? 1 : this.advancePage + 1;
 			this.advanceLoading = true;
 			try {
-				const range = this.cycleRange;
+				const range = this.getLedgerRange();
 				const data = await this.callMoney('listRecords', {
 					types: ['advance'],
 					startAt: range.startAt,
@@ -1096,6 +1166,144 @@ export default {
 			} finally {
 				this.depositLoading = false;
 			}
+		},
+		async exportLedgerCsv() {
+			if (!this.exportStartDate || !this.exportEndDate) {
+				return uni.showToast({ title: '请选择起止日期', icon: 'none' });
+			}
+			const range = this.getExportRange();
+			if (!range) {
+				return uni.showToast({ title: '结束日期不能早于开始日期', icon: 'none' });
+			}
+			this.exporting = true;
+			try {
+				const data = await this.callMoney('exportLedgerEntries', range);
+				const entries = data.entries || [];
+				const csv = this.buildLedgerCsv(entries);
+				const filename = `money-ledger_${this.compactDate(this.exportStartDate)}-${this.compactDate(this.exportEndDate)}.csv`;
+				const delivery = await this.deliverCsvFile(filename, csv);
+				const totals = data.totals || {};
+				this.lastExportSummary = {
+					total: Number(data.total || entries.length || 0),
+					income: Number(totals.income || 0),
+					expense: Number(totals.expense || 0),
+					net: Number(totals.net || 0)
+				};
+				uni.showToast({ title: delivery === 'clipboard' ? '已复制CSV内容' : 'CSV已导出', icon: 'success' });
+			} catch (e) {
+				uni.showToast({ title: e.message || e.errMsg || '导出失败', icon: 'none' });
+			} finally {
+				this.exporting = false;
+			}
+		},
+		getExportRange() {
+			const startDate = this.parseDateInput(this.exportStartDate);
+			const endDate = this.parseDateInput(this.exportEndDate);
+			if (endDate.getTime() < startDate.getTime()) return null;
+			const endAt = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() + 1).getTime();
+			return { startAt: startDate.getTime(), endAt };
+		},
+		buildLedgerCsv(entries = []) {
+			const header = ['发生时间', '类型', '方向', '金额(元)', '名称/对象', '备注', '来源', '债务'];
+			const rows = entries.map((entry) => [
+				this.formatExportDateTime(entry.occurredAt),
+				entry.typeText || this.entryTypeText(entry),
+				entry.direction || (Number(entry.signedAmount || 0) >= 0 ? '收入' : '支出'),
+				this.formatSignedYuan(entry.signedAmount),
+				entry.name || '',
+				entry.note || '',
+				entry.sourceText || (entry.source === 'human' ? '人情' : '账本'),
+				entry.debtName || ''
+			]);
+			return [header, ...rows].map((row) => row.map(this.escapeCsvCell).join(',')).join('\r\n');
+		},
+		escapeCsvCell(value) {
+			const text = String(value === undefined || value === null ? '' : value);
+			if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+			return text;
+		},
+		formatSignedYuan(cents) {
+			const value = Number(cents || 0) / 100;
+			const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+			return `${sign}${Math.abs(value).toFixed(2)}`;
+		},
+		formatExportDateTime(timestamp) {
+			const date = new Date(Number(timestamp || 0) || Date.now());
+			return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+		},
+		compactDate(value) {
+			return String(value || this.formatDateInput(Date.now())).replace(/-/g, '');
+		},
+		async deliverCsvFile(filename, csv) {
+			const content = `\ufeff${csv}`;
+			if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof Blob !== 'undefined') {
+				this.downloadCsvInH5(filename, content);
+				return 'download';
+			}
+			if (typeof plus !== 'undefined' && plus.io) {
+				try {
+					await this.saveCsvInApp(filename, content);
+					return 'file';
+				} catch (e) {
+					console.warn('[money-export] app file save failed, fallback to clipboard', e);
+				}
+			}
+			await this.copyCsvToClipboard(content);
+			return 'clipboard';
+		},
+		downloadCsvInH5(filename, content) {
+			const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = filename;
+			link.style.display = 'none';
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			setTimeout(() => URL.revokeObjectURL(url), 100);
+		},
+		saveCsvInApp(filename, content) {
+			return new Promise((resolve, reject) => {
+				plus.io.requestFileSystem(
+					plus.io.PRIVATE_DOC,
+					(fs) => {
+						fs.root.getFile(
+							filename,
+							{ create: true },
+							(fileEntry) => {
+								fileEntry.createWriter(
+									(writer) => {
+										writer.onwrite = () => {
+											const path = fileEntry.toLocalURL ? fileEntry.toLocalURL() : fileEntry.fullPath;
+											if (plus.runtime && plus.runtime.openFile) {
+												plus.runtime.openFile(path, {}, () => resolve(path), () => resolve(path));
+												return;
+											}
+											resolve(path);
+										};
+										writer.onerror = reject;
+										writer.write(content);
+									},
+									reject
+								);
+							},
+							reject
+						);
+					},
+					reject
+				);
+			});
+		},
+		copyCsvToClipboard(content) {
+			return new Promise((resolve, reject) => {
+				uni.setClipboardData({
+					data: content,
+					showToast: false,
+					success: resolve,
+					fail: reject
+				});
+			});
 		},
 		openRecordForm(type = 'expense', record = null) {
 			this.convertingAdvanceId = '';
@@ -1480,6 +1688,35 @@ export default {
 			this.cycleStartDay = this.normalizeCycleStartDay(index + 1);
 			await this.saveBookConfig();
 		},
+		confirmStartNewLedger() {
+			const that = this;
+			uni.showModal({
+				title: '开始新账期',
+				content: '会把当前时间设为新的账期起点，历史记录不会删除。',
+				confirmText: '开始',
+				success: async (res) => {
+					if (!res.confirm) return;
+					await that.startNewLedger();
+				}
+			});
+		},
+		async startNewLedger() {
+			if (this.submitting) return;
+			this.submitting = true;
+			try {
+				const nextStartAt = Date.now();
+				const data = await this.callMoney('updateBookConfig', {
+					ledgerStartAt: nextStartAt
+				});
+				this.ledgerStartAt = this.normalizeLedgerStartAt(data.ledgerStartAt || nextStartAt);
+				await this.loadLedgerData();
+				uni.showToast({ title: '新账期已开始', icon: 'success' });
+			} catch (e) {
+				uni.showToast({ title: e.message, icon: 'none' });
+			} finally {
+				this.submitting = false;
+			}
+		},
 		async handleRefresh() {
 			if (this.refreshing) return;
 			this.refreshing = true;
@@ -1495,6 +1732,16 @@ export default {
 			const day = Math.round(Number(value || DEFAULT_CYCLE_START_DAY));
 			if (!Number.isFinite(day)) return DEFAULT_CYCLE_START_DAY;
 			return Math.min(Math.max(day, 1), 31);
+		},
+		normalizeLedgerStartAt(value) {
+			const timestamp = Number(value || 0);
+			return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
+		},
+		getLedgerRange() {
+			return {
+				startAt: this.normalizeLedgerStartAt(this.ledgerStartAt),
+				endAt: Date.now() + 1
+			};
 		},
 		normalizeCycleMonth(value) {
 			if (typeof value === 'string') {
@@ -1568,10 +1815,7 @@ export default {
 			return days;
 		},
 		getDefaultRecordDate() {
-			const now = this.parseDateInput(Date.now()).getTime();
-			const range = this.cycleRange;
-			if (now >= range.startAt && now < range.endAt) return this.formatDateInput(now);
-			return this.formatDateInput(range.startAt);
+			return this.formatDateInput(Date.now());
 		},
 		parseDateInput(value) {
 			if (typeof value === 'string') {
@@ -1615,6 +1859,10 @@ export default {
 		formatDateText(timestamp) {
 			const date = new Date(timestamp);
 			return `${date.getMonth() + 1}月${date.getDate()}日`;
+		},
+		formatDateTimeText(timestamp) {
+			const date = new Date(this.normalizeLedgerStartAt(timestamp));
+			return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 		},
 		shortDate(timestamp) {
 			const date = new Date(timestamp || Date.now());
@@ -1861,6 +2109,10 @@ export default {
 	font-size: 24rpx;
 }
 
+.hero-chip-action {
+	white-space: nowrap;
+}
+
 .hero-profit-amount {
 	margin-top: 14rpx;
 	font-size: 58rpx;
@@ -1894,11 +2146,17 @@ export default {
 	margin-top: 24rpx;
 }
 
+.ledger-metrics {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .hero-metrics view {
 	flex: 1;
 	padding: 18rpx;
 	border-radius: 16rpx;
 	background: rgba(255, 255, 255, 0.11);
+	min-width: 0;
 }
 
 .hero-metrics text {
@@ -1949,6 +2207,57 @@ export default {
 	text-align: center;
 	box-sizing: border-box;
 	white-space: nowrap;
+}
+
+.stats-controls {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 12rpx;
+	flex-wrap: wrap;
+}
+
+.export-form {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16rpx;
+	margin-top: 24rpx;
+}
+
+.export-field {
+	min-width: 0;
+}
+
+.export-label {
+	margin-bottom: 10rpx;
+	color: #667085;
+	font-size: 24rpx;
+	font-weight: 700;
+}
+
+.picker-placeholder {
+	color: #98a2b3;
+}
+
+.export-btn {
+	margin-top: 12rpx;
+	height: 88rpx;
+	line-height: 88rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10rpx;
+	font-size: 28rpx;
+}
+
+.export-result {
+	margin-top: 24rpx;
+	padding-top: 24rpx;
+	border-top: 1px solid #f0f0f0;
+}
+
+.export-summary-grid {
+	margin-top: 0;
 }
 
 .add-record-btn {

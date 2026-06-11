@@ -38,6 +38,10 @@
 			"title": "工资金额，单位分",
 			"minimum": 1
 		},
+		"ledger_start_at": {
+			"bsonType": "timestamp",
+			"title": "手动账期起点"
+		},
 		"created_at": {
 			"bsonType": "timestamp",
 			"description": "创建时间"
